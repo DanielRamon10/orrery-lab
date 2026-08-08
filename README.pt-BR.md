@@ -551,9 +551,12 @@ funciona se a armadilha for mesmo uma armadilha.
 
 ### Limites declarados
 
-Dois planetas, coplanares, estrela como massa pontual, sem marés nem relatividade. O
-rótulo significa "sobreviveu 1.200 órbitas", não "estável para sempre" — sistemas reais
-desestabilizam em escalas muito maiores que qualquer janela usada aqui.
+Dois planetas, coplanares, estrela como massa pontual, sem marés nem relatividade. Sobre
+o "coplanares": não é uma simplificação inofensiva, veja
+[inclinação mútua](#inclinação-mútua-que-deveria-piorar-as-coisas) para quanto da
+instabilidade ela responde. O rótulo significa "sobreviveu 1.200 órbitas", não "estável
+para sempre" — sistemas reais desestabilizam em escalas muito maiores que qualquer janela
+usada aqui.
 
 ---
 
@@ -630,7 +633,7 @@ chapado. O brilho agora vai na cor, que o blending aditivo resolve de graça.
 
 ## Além do roteiro
 
-Três acréscimos depois das sete fases, cada um fechando uma lacuna que o trabalho
+Quatro acréscimos depois das sete fases, cada um fechando uma lacuna que o trabalho
 anterior deixou aberta.
 
 ### Três planetas, onde critérios de pares param de funcionar
@@ -661,6 +664,49 @@ Entre Δ = 7 e 9 sistemas de dois planetas nunca falham e os de três falham alg
 cento das vezes — com **cada par adjacente individualmente previsto como seguro**. O
 painel (d) acompanha um deles: os três semieixos trocam energia em degraus por 850
 órbitas, e então um planeta é expulso do sistema.
+
+Todo sistema acima é **coplanar**, e a próxima seção mostra quanto peso essa suposição
+estava carregando.
+
+### Inclinação mútua, que deveria piorar as coisas
+
+Inclinar os planos orbitais parecia mais um grau de liberdade para desestabilizar um
+sistema. Faz o contrário, e não sutilmente.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/phase3-inclination-dark.png">
+    <img src="docs/images/phase3-inclination-light.png" alt="Dois painéis contra a inclinação mútua: a sobrevivência subindo abruptamente a partir do caso coplanar para sistemas de dois e de três planetas, e a taxa de ejeção despencando mais rápido que a de sistemas que apenas se rearranjam." width="100%">
+  </picture>
+</p>
+
+Separações apertadas (2,5–6 raios de Hill mútuos), 500 sistemas e 800 órbitas por ponto, e
+a *única* coisa que muda ao longo do eixo x é a inclinação entre os planos:
+
+| Inclinação mútua mediana | 2 planetas | 3 planetas | Um planeta ejetado |
+|---|---|---|---|
+| 0,0° (coplanar) | 71,2% | **32,4%** | 24,0% |
+| 4,5° | 90,6% | **80,4%** | 2,2% |
+| 17,8° | 97,8% | **97,2%** | 0,0% |
+| 77,7° | 100% | **99,8%** | 0,0% |
+
+Quatro graus e meio levam a sobrevivência de três planetas de 32% para 80% e cortam as
+ejeções de 24% para 2%. E não é uma inclinação exótica: nossos próprios planetas ficam a
+uma mediana de **2,2°** uns dos outros, e Mercúrio e Netuno estão a **7,0°**, então o
+efeito inteiro acontece dentro da faixa que um sistema real ocupa.
+
+O mecanismo é geométrico. Sobreposição de ressonâncias e encontros próximos precisam que
+os planetas de fato *se encontrem*, e órbitas que não compartilham um plano cruzam o
+mesmo raio em alturas diferentes. O painel (b) é a evidência dessa leitura — ejeções, que
+exigem um encontro próximo, somem mais rápido que os sistemas que apenas embaralham as
+órbitas e mantêm todos os planetas, então a causa são os encontros, e não a deriva
+secular lenta.
+
+**Isso põe uma ressalva na seção acima.** A penalidade do terceiro planeta é um fenômeno
+coplanar. Coplanares, a sobrevivência de dois e de três planetas difere em 39 pontos; a
+17,8° de inclinação mútua, difere em 0,6. O resultado anterior continua válido, para o
+caso coplanar em que foi medido — o que vale dizer com todas as letras, porque é a
+suposição que eu teria mantido em silêncio se a varredura não tivesse sido feita.
 
 ### O diagrama de Hertzsprung–Russell, ligado à cena
 

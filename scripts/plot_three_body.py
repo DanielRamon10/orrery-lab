@@ -14,12 +14,16 @@ Four panels:
 (c) The separation needed for a given survival rate — the boundary, shifted.
 (d) One three-planet system coming apart, with every adjacent pair predicted safe.
 
+A second figure sweeps **mutual inclination**, which turns out to matter more than
+the third body does --- and puts a caveat on the first figure's headline.
+
 Usage::
 
     python scripts/plot_three_body.py
     python scripts/plot_three_body.py --quick
 
-Writes ``docs/images/phase3-three-body-light.png`` and ``-dark.png``.
+Writes ``docs/images/phase3-three-body-{light,dark}.png`` and
+``docs/images/phase3-inclination-{light,dark}.png``.
 """
 
 from __future__ import annotations
@@ -62,6 +66,17 @@ MARKER_SIZE = 7.0
 LINE_WIDTH = 1.8
 EDGES = np.array([2.0, 3.0, 3.5, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 14.0])
 SURVIVAL_LEVELS = (0.50, 0.90, 0.99)
+
+#: Inclinations swept in the second figure, in degrees --- each planet's tilt to a
+#: shared reference plane. The mutual angle between orbits comes out somewhat smaller
+#: on average, and is what gets plotted, because that is the quantity with dynamical
+#: meaning.
+INCLINATIONS = (0.0, 5.0, 10.0, 20.0, 40.0, 60.0, 90.0)
+
+#: Separations for the inclination sweep. Tighter than the main study on purpose: at
+#: wide separations almost everything survives while coplanar already, leaving the
+#: effect no room to show.
+INCLINATION_SEPARATIONS = (2.5, 6.0)
 
 
 def style_axes(ax, theme: dict) -> None:
@@ -265,6 +280,107 @@ def plot_disruption(ax, theme, runs) -> None:
     )
 
 
+#: Captions sitting below each inclination panel. Kept out of the axes and placed in
+#: figure coordinates by :func:`build_inclination_figure`: ``tight_layout`` measures an
+#: axes' text children as part of its bounding box, so a caption anchored at a negative
+#: axes fraction makes the layout shrink the plot to make room for the caption, which
+#: then moves down, and so on. Figure coordinates simply do not participate.
+INCLINATION_CAPTIONS = (
+    "Coplanar systems at these separations are wrecked. Tilting the orbits by a few\n"
+    "degrees lets the planets pass over and under each other instead of meeting.",
+    "An ejection needs a close encounter, and inclination is what prevents one, so it\n"
+    "is the first failure mode to disappear. That pins the cause on encounters rather\n"
+    "than on slow secular drift.",
+)
+
+
+def plot_inclination_survival(ax, theme, sweep) -> None:
+    """Survival against mutual inclination, for two and three planets."""
+    style_axes(ax, theme)
+    ax.set_title(
+        "(a) A few degrees of tilt changes everything",
+        color=theme["ink"], fontsize=10, pad=10, loc="left",
+    )
+    ax.set_xlabel("median mutual inclination between orbits (degrees)",
+                  color=theme["ink_muted"], fontsize=8)
+    ax.set_ylabel("fraction still stable", color=theme["ink_muted"], fontsize=8)
+
+    for planets, colour in ((2, theme["series"][0]), (3, theme["series"][1])):
+        angles = [entry[planets]["mutual"] for entry in sweep]
+        rates = [entry[planets]["stable"] for entry in sweep]
+        counts = [entry[planets]["count"] for entry in sweep]
+        errors = [np.sqrt(r * (1 - r) / n) for r, n in zip(rates, counts, strict=True)]
+
+        ax.errorbar(
+            angles, rates, yerr=errors, color=colour, linewidth=LINE_WIDTH,
+            marker="o", markersize=MARKER_SIZE - 2, markeredgecolor=theme["surface"],
+            markeredgewidth=1.2, capsize=2.5, elinewidth=0.9, zorder=3,
+            label=f"{planets} planets",
+        )
+
+    ax.set_ylim(-0.03, 1.08)
+    ax.legend(frameon=False, fontsize=8, loc="lower right", labelcolor=theme["ink_secondary"])
+
+
+def plot_inclination_mechanism(ax, theme, sweep) -> None:
+    """Which kind of disruption goes away first, for three planets."""
+    style_axes(ax, theme)
+    ax.set_title(
+        "(b) Ejections vanish first",
+        color=theme["ink"], fontsize=10, pad=10, loc="left",
+    )
+    ax.set_xlabel("median mutual inclination between orbits (degrees)",
+                  color=theme["ink_muted"], fontsize=8)
+    ax.set_ylabel("fraction of three-planet systems", color=theme["ink_muted"], fontsize=8)
+
+    angles = [entry[3]["mutual"] for entry in sweep]
+
+    for key, colour, label in (
+        ("ejected", theme["series"][1], "a planet ejected"),
+        ("shuffled", theme["series"][2], "orbits shuffled, all retained"),
+    ):
+        ax.plot(
+            angles, [entry[3][key] for entry in sweep], color=colour, linewidth=LINE_WIDTH,
+            marker="o", markersize=MARKER_SIZE - 2, markeredgecolor=theme["surface"],
+            markeredgewidth=1.2, zorder=3, label=label,
+        )
+
+    ax.legend(frameon=False, fontsize=8, loc="upper right", labelcolor=theme["ink_secondary"])
+
+
+def build_inclination_figure(mode, sweep, output: Path) -> None:
+    theme = THEMES[mode]
+    figure, axes = plt.subplots(1, 2, figsize=(13.4, 5.0), facecolor=theme["page"])
+    figure.suptitle(
+        "orrery-lab \u00b7 mutual inclination \u00b7 the third planet's penalty is a coplanar one",
+        color=theme["ink"], fontsize=13, x=0.045, ha="left", y=0.955,
+    )
+    figure.text(
+        0.045, 0.878,
+        "Same separations (2.5-6 Hill radii) and the same integration length throughout; "
+        "only the tilt between orbital planes changes.",
+        color=theme["ink_muted"], fontsize=9, ha="left",
+    )
+
+    plot_inclination_survival(axes[0], theme, sweep)
+    plot_inclination_mechanism(axes[1], theme, sweep)
+
+    figure.tight_layout(rect=(0.0, 0.20, 1.0, 0.83))
+
+    # Captions go on last, centred under whatever the layout decided each panel's width
+    # would be. See INCLINATION_CAPTIONS for why they are not axes children.
+    for ax, caption in zip(axes, INCLINATION_CAPTIONS, strict=True):
+        box = ax.get_position()
+        figure.text(
+            (box.x0 + box.x1) / 2, box.y0 - 0.115, caption,
+            fontsize=7.5, color=theme["ink_muted"], ha="center", va="top",
+        )
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output, dpi=170, facecolor=theme["page"])
+    plt.close(figure)
+
+
 def build_figure(mode, runs, output: Path) -> None:
     theme = THEMES[mode]
     figure, axes = plt.subplots(2, 2, figsize=(13.4, 10.8), facecolor=theme["page"])
@@ -341,6 +457,53 @@ def main() -> None:
         target = outdir / f"phase3-three-body-{mode}.png"
         build_figure(mode, runs, target)
         print(f"\nwrote {target}")
+
+    # --- the inclination sweep -----------------------------------------------
+    sweep_count = 250 if args.quick else 500
+    sweep_orbits = 300.0 if args.quick else 800.0
+
+    print(
+        f"\nsweeping mutual inclination "
+        f"({sweep_count} systems x {sweep_orbits:.0f} orbits per point)"
+    )
+    print(f"{'tilt':>7}{'mutual':>10}{'2 planets':>12}{'3 planets':>12}{'ejected':>10}")
+
+    sweep = []
+    for inclination in INCLINATIONS:
+        entry = {}
+        for planets in (2, 3):
+            dataset = build_multiplanet_dataset(
+                count=sweep_count, planets=planets, orbits=sweep_orbits,
+                max_inclination_deg=inclination,
+                hill_separation_range=INCLINATION_SEPARATIONS,
+            )
+            entry[planets] = {
+                "mutual": float(np.median(dataset.max_mutual_inclination)),
+                "stable": dataset.stable_fraction,
+                "count": len(dataset),
+                "ejected": float(dataset.escaped.mean()),
+                "shuffled": float(
+                    ((dataset.max_axis_change > 0.20) & ~dataset.escaped).mean()
+                ),
+            }
+        sweep.append(entry)
+        print(
+            f"{inclination:>5.0f}deg{entry[3]['mutual']:>9.1f}deg"
+            f"{entry[2]['stable']:>12.1%}{entry[3]['stable']:>12.1%}"
+            f"{entry[3]['ejected']:>10.1%}"
+        )
+
+    coplanar_gap = sweep[0][2]["stable"] - sweep[0][3]["stable"]
+    inclined_gap = sweep[3][2]["stable"] - sweep[3][3]["stable"]
+    print(
+        f"\nthe third planet costs {coplanar_gap:.1%} coplanar, but only "
+        f"{inclined_gap:.1%} at {sweep[3][3]['mutual']:.0f} degrees of mutual inclination"
+    )
+
+    for mode in ("light", "dark"):
+        target = outdir / f"phase3-inclination-{mode}.png"
+        build_inclination_figure(mode, sweep, target)
+        print(f"wrote {target}")
 
     print(f"\ntotal {time.perf_counter() - started:.0f} s")
 

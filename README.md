@@ -553,7 +553,9 @@ works if the trap is really a trap.
 
 Two planets, coplanar, point-mass star, no tides or relativity. The label means
 "survived 1,200 orbits", not "stable forever" — real systems destabilise on timescales
-far longer than any window used here.
+far longer than any window used here. Coplanar is not a harmless simplification: see
+[mutual inclination](#mutual-inclination-which-was-supposed-to-make-things-worse) for how
+much of the instability it is responsible for.
 
 ---
 
@@ -630,7 +632,7 @@ now rides in the colour, which additive blending handles for free.
 
 ## Beyond the roadmap
 
-Three additions after the seven phases, each closing a gap the earlier work left open.
+Four additions after the seven phases, each closing a gap the earlier work left open.
 
 ### Three planets, where pairwise criteria stop working
 
@@ -659,6 +661,48 @@ Between Δ = 7 and 9 two-planet systems never fail and three-planet systems fail
 percent of the time — with **every adjacent pair individually predicted safe**. Panel (d)
 follows one of them: the three semi-major axes trade energy in steps for 850 orbits, then
 a planet is thrown out of the system entirely.
+
+Every system above is **coplanar**, and the next section shows how much that assumption
+was carrying.
+
+### Mutual inclination, which was supposed to make things worse
+
+Tilting the orbital planes apart looked like one more degree of freedom to destabilise a
+system. It does the reverse, and not subtly.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/phase3-inclination-dark.png">
+    <img src="docs/images/phase3-inclination-light.png" alt="Two panels against mutual inclination: survival rising steeply from coplanar for both two- and three-planet systems, and the ejection rate collapsing faster than the rate of systems that merely rearrange." width="100%">
+  </picture>
+</p>
+
+Tight separations (2.5–6 mutual Hill radii), 500 systems and 800 orbits per point, and
+the *only* thing that changes along the x-axis is the tilt between the planes:
+
+| Median mutual inclination | 2 planets | 3 planets | A planet ejected |
+|---|---|---|---|
+| 0.0° (coplanar) | 71.2% | **32.4%** | 24.0% |
+| 4.5° | 90.6% | **80.4%** | 2.2% |
+| 17.8° | 97.8% | **97.2%** | 0.0% |
+| 77.7° | 100% | **99.8%** | 0.0% |
+
+Four and a half degrees takes three-planet survival from 32% to 80% and cuts ejections
+from 24% to 2%. That is not an exotic tilt: our own planets sit a median **2.2°** apart,
+and Mercury and Neptune are **7.0°** apart, so the whole effect happens inside the range
+a real system occupies.
+
+The mechanism is geometric. Resonance overlap and close encounters both need the planets
+to *meet*, and orbits that do not share a plane cross the same radius at different
+heights. Panel (b) is the evidence for that reading — ejections, which require a close
+encounter, vanish faster than the systems that merely shuffle their orbits and keep every
+planet, so the cause is encounters rather than slow secular drift.
+
+**This puts a caveat on the section above.** The third planet's penalty is a coplanar
+phenomenon. Coplanar, two- and three-planet survival differ by 39 points; at 17.8° of
+mutual inclination they differ by 0.6. The earlier result stands, for the coplanar case
+it was measured in — which is worth stating plainly, because it is the assumption I would
+have quietly kept if the sweep had not been run.
 
 ### The Hertzsprung–Russell diagram, wired to the scene
 

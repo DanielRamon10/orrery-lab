@@ -427,3 +427,164 @@ class TestThirdPlanetChangesTheAnswer:
         first = build_multiplanet_dataset(count=60, planets=3, orbits=60.0, seed=99)
         second = build_multiplanet_dataset(count=60, planets=3, orbits=60.0, seed=99)
         np.testing.assert_array_equal(first.labels, second.labels)
+
+
+# ---------------------------------------------------------------------------
+# Mutual inclination
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def inclined_three_planet():
+    """Three planets with mutual inclination, against the coplanar control."""
+    return build_multiplanet_dataset(
+        count=250, planets=3, orbits=250.0, seed=5,
+        max_inclination_deg=20.0, hill_separation_range=(2.5, 6.0),
+    )
+
+
+@pytest.fixture(scope="module")
+def coplanar_three_planet():
+    """The control: identical apart from every orbit sharing a plane."""
+    return build_multiplanet_dataset(
+        count=250, planets=3, orbits=250.0, seed=5,
+        max_inclination_deg=0.0, hill_separation_range=(2.5, 6.0),
+    )
+
+
+class TestInclinationGeometry:
+    def test_coplanar_is_still_exactly_coplanar(self):
+        """The default must reproduce the earlier study bit for bit, not approximately.
+
+        The three-rotation placement collapses to the old in-plane one when the
+        inclination and node vanish, so z stays *exactly* zero — not merely small.
+        Anything else would mean the published two-versus-three numbers no longer
+        describe the code that produced them.
+        """
+        sample = sample_planet_systems(60, planets=3, seed=1)
+        positions, velocities, _ = _multiplanet_initial_state(sample, GM_SUN)
+
+        assert np.max(np.abs(positions[..., 2])) == 0.0
+        assert np.max(np.abs(velocities[..., 2])) == 0.0
+        assert np.max(sample.mutual_inclinations()) == 0.0
+
+    def test_inclined_orbits_leave_the_reference_plane(self):
+        sample = sample_planet_systems(60, planets=3, seed=1, max_inclination_deg=30.0)
+        positions, _, _ = _multiplanet_initial_state(sample, GM_SUN)
+        assert np.max(np.abs(positions[..., 2])) > 0.1
+
+    def test_orbit_normals_are_unit_vectors(self):
+        sample = sample_planet_systems(80, planets=4, seed=3, max_inclination_deg=45.0)
+        norms = np.linalg.norm(sample.orbit_normals(), axis=-1)
+        np.testing.assert_allclose(norms, 1.0, atol=1e-14)
+
+    def test_mutual_inclination_can_exceed_each_planets_own(self):
+        """Two orbits tilted 30 degrees each can be 60 degrees apart, or coplanar.
+
+        Mutual inclination depends on the nodes as well as the tilts, which is why
+        the dataset records the mutual angle rather than the per-planet one.
+        """
+        sample = sample_planet_systems(400, planets=2, seed=7, max_inclination_deg=30.0)
+        mutual = np.degrees(sample.mutual_inclinations())
+
+        assert mutual.max() > 30.0
+        assert mutual.min() < 5.0
+
+    def test_inclination_preserves_the_ellipse(self):
+        """Tilting a plane must not change how far the planet is from the star."""
+        sample = sample_planet_systems(120, planets=3, seed=11, max_inclination_deg=40.0)
+        positions, _, _ = _multiplanet_initial_state(sample, GM_SUN)
+
+        for index in range(3):
+            axis = sample.semi_major_axes[:, index]
+            eccentricity = sample.eccentricities[:, index]
+            distance = np.linalg.norm(
+                positions[:, index + 1, :] - positions[:, 0, :], axis=-1
+            )
+            assert np.all(distance >= axis * (1 - eccentricity) - 1e-9)
+            assert np.all(distance <= axis * (1 + eccentricity) + 1e-9)
+
+    def test_barycentre_still_starts_at_rest(self):
+        sample = sample_planet_systems(50, planets=3, seed=13, max_inclination_deg=60.0)
+        positions, velocities, gms = _multiplanet_initial_state(sample, GM_SUN)
+
+        centre = np.einsum("sn,snk->sk", gms, positions) / gms.sum(axis=1)[:, None]
+        assert np.max(np.abs(centre)) < 1e-15
+        assert np.max(np.abs(np.einsum("sn,snk->sk", gms, velocities))) < 1e-18
+
+    def test_rejects_an_impossible_inclination(self):
+        with pytest.raises(ValueError, match="max_inclination_deg"):
+            sample_planet_systems(10, planets=3, max_inclination_deg=200.0)
+
+
+class TestInclinationStabilises:
+    """The result, and the caveat it puts on the coplanar study.
+
+    Instability at these separations is driven by close encounters, and two orbits in
+    different planes pass over and under one another instead of meeting. A few degrees
+    is enough to lift the planets out of each other's path.
+    """
+
+    def test_inclination_improves_survival(self, coplanar_three_planet, inclined_three_planet):
+        assert (
+            inclined_three_planet.stable_fraction
+            > coplanar_three_planet.stable_fraction + 0.2
+        )
+
+    def test_ejections_collapse_first(self, coplanar_three_planet, inclined_three_planet):
+        """The mechanism: an ejection needs a close encounter, and inclination prevents it.
+
+        Ejections vanish faster than the gentler axis-swapping disruptions do, which is
+        what pins the cause on encounters rather than on secular drift.
+
+        The floor below is 5%, not the 10% these systems reach over a longer run.
+        Ejection takes time to build, and this fixture integrates 250 orbits where the
+        exploratory sweep used 800 — a threshold calibrated on the long run fails on
+        the short one for reasons that have nothing to do with the effect.
+        """
+        assert coplanar_three_planet.escaped.mean() > 0.05
+        assert inclined_three_planet.escaped.mean() < coplanar_three_planet.escaped.mean() / 3
+
+    def test_the_third_planet_penalty_is_a_coplanar_phenomenon(self):
+        """A caveat on this project's own earlier result.
+
+        The coplanar study found three-planet systems markedly less stable than two at
+        matched separations. That gap is largely erased by mutual inclination — the
+        resonance overlap responsible for it needs the orbits to share a plane. The
+        earlier finding stands, but only for the coplanar case it was measured in.
+        """
+        options = {
+            "count": 250, "orbits": 250.0, "seed": 5,
+            "hill_separation_range": (2.5, 6.0),
+        }
+
+        def gap(inclination: float) -> float:
+            """How much worse three planets do than two, at this inclination."""
+            two, three = (
+                build_multiplanet_dataset(
+                    planets=planets, max_inclination_deg=inclination, **options
+                ).stable_fraction
+                for planets in (2, 3)
+            )
+            return two - three
+
+        coplanar_gap, inclined_gap = gap(0.0), gap(20.0)
+
+        assert coplanar_gap > 0.2
+        assert inclined_gap < coplanar_gap / 3
+
+    def test_records_the_mutual_inclination(self, inclined_three_planet):
+        recorded = inclined_three_planet.max_mutual_inclination
+        assert recorded.shape == (len(inclined_three_planet),)
+        assert recorded.max() > 5.0
+        assert np.all(recorded >= 0.0)
+
+    def test_coplanar_run_records_zero_inclination(self, coplanar_three_planet):
+        assert np.max(coplanar_three_planet.max_mutual_inclination) == 0.0
+
+    def test_survival_by_inclination_bins(self, inclined_three_planet):
+        edges = np.array([0.0, 10.0, 20.0, 40.0, 90.0])
+        centres, rates, counts = inclined_three_planet.survival_by_inclination(edges, 5)
+        assert len(centres) >= 2
+        assert np.all((rates >= 0) & (rates <= 1))
+        assert counts.sum() <= len(inclined_three_planet)
