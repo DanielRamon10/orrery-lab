@@ -22,9 +22,9 @@ dependencies = [
 [project.optional-dependencies]
 # Plots and notebooks used to validate the physics.
 viz = ["matplotlib>=3.8"]
-# Phase 5+: machine learning and tabular catalogue wrangling.
+# Phase 5+: the learning models. Catalogue parsing uses the standard library's csv
+# rather than pandas, so the base install stays light and this extra stays small.
 science = [
-    "pandas>=2.1",
     "scikit-learn>=1.4",
 ]
 dev = [

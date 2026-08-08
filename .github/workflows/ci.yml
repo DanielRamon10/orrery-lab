@@ -19,7 +19,9 @@ jobs:
           cache: pip
 
       - name: Install
-        run: pip install -e ".[viz,dev]"
+        # science is needed too: phase 5's models import scikit-learn, so the test
+        # suite does not collect without it.
+        run: pip install -e ".[viz,science,dev]"
 
       - name: Lint
         run: ruff check .
