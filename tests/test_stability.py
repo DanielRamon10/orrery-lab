@@ -24,11 +24,14 @@ from orrery.stability import (
     FEATURE_NAMES,
     HILL_STABILITY_THRESHOLD,
     _initial_state,
+    _multiplanet_initial_state,
     batch_accelerations,
+    build_multiplanet_dataset,
     build_stability_dataset,
     hill_separation,
     integrate_batch,
     mutual_hill_radius,
+    sample_planet_systems,
     sample_two_planet_systems,
 )
 
@@ -276,3 +279,151 @@ class TestDatasetShape:
     def test_rejects_empty_request(self):
         with pytest.raises(ValueError, match="count must be positive"):
             sample_two_planet_systems(0)
+
+
+# ---------------------------------------------------------------------------
+# Three planets, where the pairwise criterion stops working
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def three_planet():
+    """A small three-planet run, reused across the checks below."""
+    return build_multiplanet_dataset(count=200, planets=3, orbits=200.0, seed=5)
+
+
+@pytest.fixture(scope="module")
+def two_planet():
+    """The matched two-planet control: same sampler, same span, one fewer body."""
+    return build_multiplanet_dataset(count=200, planets=2, orbits=200.0, seed=5)
+
+
+class TestMultiPlanetSampling:
+    def test_axes_increase_outward(self):
+        sample = sample_planet_systems(120, planets=4, seed=3)
+        assert np.all(np.diff(sample.semi_major_axes, axis=1) > 0)
+
+    def test_every_adjacent_separation_is_in_range(self):
+        wanted = (3.0, 9.0)
+        sample = sample_planet_systems(150, planets=4, seed=7, hill_separation_range=wanted)
+
+        separations = sample.adjacent_hill_separations()
+        assert separations.shape == (150, 3)
+        assert separations.min() >= wanted[0] - 1e-9
+        assert separations.max() <= wanted[1] + 1e-9
+
+    def test_two_planet_path_matches_the_pairwise_helper(self):
+        """The generalised sampler must agree with the original for a pair."""
+        sample = sample_planet_systems(80, planets=2, seed=11)
+        direct = hill_separation(
+            sample.gms[:, 0], sample.gms[:, 1],
+            sample.semi_major_axes[:, 0], sample.semi_major_axes[:, 1],
+        )
+        np.testing.assert_allclose(
+            sample.adjacent_hill_separations()[:, 0], direct, rtol=1e-13
+        )
+
+    def test_rejects_a_single_planet(self):
+        with pytest.raises(ValueError, match="at least two planets"):
+            sample_planet_systems(10, planets=1)
+
+    def test_rejects_empty_request(self):
+        with pytest.raises(ValueError, match="count must be positive"):
+            sample_planet_systems(0, planets=3)
+
+
+class TestMultiPlanetInitialConditions:
+    def test_state_has_one_body_per_planet_plus_the_star(self):
+        sample = sample_planet_systems(30, planets=4, seed=13)
+        positions, velocities, gms = _multiplanet_initial_state(sample, GM_SUN)
+
+        assert positions.shape == (30, 5, 3)
+        assert velocities.shape == (30, 5, 3)
+        assert gms.shape == (30, 5)
+        # Body 0 is the star.
+        np.testing.assert_allclose(gms[:, 0], GM_SUN)
+
+    def test_barycentre_starts_at_rest_at_the_origin(self):
+        sample = sample_planet_systems(40, planets=3, seed=17)
+        positions, velocities, gms = _multiplanet_initial_state(sample, GM_SUN)
+
+        centre = np.einsum("sn,snk->sk", gms, positions) / gms.sum(axis=1)[:, None]
+        momentum = np.einsum("sn,snk->sk", gms, velocities)
+
+        assert np.max(np.abs(centre)) < 1e-15
+        assert np.max(np.abs(momentum)) < 1e-18
+
+    def test_planets_start_on_their_intended_ellipses(self):
+        sample = sample_planet_systems(60, planets=3, seed=19)
+        positions, _, _ = _multiplanet_initial_state(sample, GM_SUN)
+
+        for index in range(3):
+            axis = sample.semi_major_axes[:, index]
+            eccentricity = sample.eccentricities[:, index]
+            distance = np.linalg.norm(
+                positions[:, index + 1, :] - positions[:, 0, :], axis=-1
+            )
+            assert np.all(distance >= axis * (1 - eccentricity) - 1e-9)
+            assert np.all(distance <= axis * (1 + eccentricity) + 1e-9)
+
+
+class TestThirdPlanetChangesTheAnswer:
+    """The result that motivated generalising past a pair.
+
+    Two planets destabilise by approaching each other, which the Hill separation
+    predicts well. Three destabilise mainly through **resonance overlap**, where each
+    pair sits comfortably outside its own Hill limit but resonances belonging to
+    different pairs overlap in between. No pairwise number can see that, and these
+    tests pin down that it happens.
+    """
+
+    def test_labels_still_improve_with_separation(self, three_planet):
+        wide = three_planet.min_hill_separation > 9.0
+        narrow = three_planet.min_hill_separation < 3.5
+        assert three_planet.labels[wide].mean() > three_planet.labels[narrow].mean() + 0.4
+
+    def test_three_planets_are_less_stable_than_two_at_matched_separation(
+        self, two_planet, three_planet
+    ):
+        """The same separations, the same span — only a third body differs."""
+        assert three_planet.stable_fraction < two_planet.stable_fraction
+
+    def test_the_pairwise_criterion_is_less_reliable_with_three(
+        self, two_planet, three_planet
+    ):
+        """Above Gladman's threshold, three-planet systems still fail noticeably more.
+
+        Every adjacent pair in these systems is individually predicted safe. The
+        pairwise criterion has no way to express what the third body does.
+        """
+        def survival_above_threshold(dataset):
+            above = dataset.min_hill_separation > HILL_STABILITY_THRESHOLD
+            return float(dataset.labels[above].mean())
+
+        assert survival_above_threshold(three_planet) < survival_above_threshold(two_planet)
+
+    def test_wide_separations_are_safe_for_both(self, two_planet, three_planet):
+        """The effect is a shifted boundary, not a claim that three planets never survive."""
+        for dataset in (two_planet, three_planet):
+            wide = dataset.min_hill_separation > 11.0
+            if wide.sum() >= 10:
+                assert dataset.labels[wide].mean() > 0.9
+
+    def test_survival_curve_is_monotone_enough_to_read(self, three_planet):
+        edges = np.array([2.0, 4.0, 6.0, 8.0, 10.0, 14.0])
+        _, rates, _ = three_planet.survival_by_separation(edges)
+        assert rates[-1] > rates[0] + 0.4
+
+    def test_records_the_planet_count(self, three_planet):
+        assert three_planet.planet_count == 3
+        assert three_planet.sample.planet_count == 3
+
+    def test_every_disrupted_system_has_a_cause(self, three_planet):
+        disrupted = three_planet.labels == 0
+        cause = (three_planet.max_axis_change > 0.20) | three_planet.escaped
+        assert np.all(cause[disrupted])
+
+    def test_reproducible_for_a_fixed_seed(self):
+        first = build_multiplanet_dataset(count=60, planets=3, orbits=60.0, seed=99)
+        second = build_multiplanet_dataset(count=60, planets=3, orbits=60.0, seed=99)
+        np.testing.assert_array_equal(first.labels, second.labels)

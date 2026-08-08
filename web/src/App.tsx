@@ -5,8 +5,11 @@
 import { Canvas } from "@react-three/fiber";
 import { Suspense } from "react";
 
+import { useStarCatalogue } from "./lib/starCatalogue";
 import { Orrery } from "./scene/Orrery";
+
 import { SimulationProvider } from "./state/SimulationProvider";
+import { HrDiagram } from "./ui/HrDiagram";
 import { Readout } from "./ui/Readout";
 import { ScaleControls } from "./ui/ScaleControls";
 import { TimeControls } from "./ui/TimeControls";
@@ -14,6 +17,22 @@ import { TimeControls } from "./ui/TimeControls";
 export default function App() {
   return (
     <SimulationProvider>
+      <Scene />
+    </SimulationProvider>
+  );
+}
+
+/**
+ * Split out of `App` so it sits *inside* the provider: the HR panel needs the
+ * simulation context, which a component rendering the provider cannot reach.
+ */
+function Scene() {
+  // Loaded once and shared with the 3D star field, so a selection in the diagram maps
+  // to the same rows the scene is drawing.
+  const catalogue = useStarCatalogue();
+
+  return (
+    <>
       <div className="app">
         <Canvas
           // Roughly the "All" framing, so the first painted frame is already in
@@ -38,6 +57,7 @@ export default function App() {
 
         <div className="dock dock--right">
           <ScaleControls />
+          <HrDiagram catalogue={catalogue} />
           <Readout />
         </div>
 
@@ -49,6 +69,6 @@ export default function App() {
           Drag to orbit · scroll to zoom · click a body to inspect
         </footer>
       </div>
-    </SimulationProvider>
+    </>
   );
 }

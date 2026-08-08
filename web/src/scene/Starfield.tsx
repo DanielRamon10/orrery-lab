@@ -13,17 +13,16 @@
  *   the origin. Pull the camera back and the flattened disc appears, because it is
  *   there in the data.
  *
- * The catalogue is loaded with `fetch` rather than imported. A 600 kB JSON `import`
- * would be inlined into the main bundle by Vite and block first paint; fetching it
- * keeps it a separate cacheable asset and lets the solar system render immediately
- * while the sky arrives a moment later.
+ * Loading is handled by `lib/starCatalogue.ts`, which memoises one fetch shared with
+ * the Hertzsprung-Russell panel so a selection there maps to these exact rows.
  */
 
 import { useFrame } from "@react-three/fiber";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { AdditiveBlending, BufferAttribute, BufferGeometry, type Points } from "three";
 
-import starsUrl from "../data/stars.generated.json?url";
+import { useStarCatalogue } from "../lib/starCatalogue";
+import { useSimulation } from "../state/simulation";
 
 /** Radius of the sphere the sky is painted on, in scene units. */
 const SKY_RADIUS = 900;
@@ -32,14 +31,6 @@ const SKY_RADIUS = 900;
 const UNITS_PER_PARSEC = 0.5;
 
 export type StarMode = "sky" | "galactic" | "off";
-
-interface StarCatalogue {
-  readonly count: number;
-  readonly direction: number[][];
-  readonly magnitude: number[];
-  readonly colour: number[][];
-  readonly galactic: (number[] | null)[];
-}
 
 /**
  * Display brightness from apparent magnitude, in `[0.12, 1]`.
@@ -61,40 +52,13 @@ function brightnessFromMagnitude(magnitude: number, brightest: number): number {
   return Math.max(0.12, Math.min(1, Math.pow(2.512, -0.42 * (magnitude - brightest))));
 }
 
-function useStarCatalogue(): StarCatalogue | null {
-  const [catalogue, setCatalogue] = useState<StarCatalogue | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    fetch(starsUrl)
-      .then((response) => {
-        if (!response.ok) throw new Error(`star catalogue: HTTP ${response.status}`);
-        return response.json();
-      })
-      .then((data: StarCatalogue) => {
-        if (!cancelled) setCatalogue(data);
-      })
-      .catch((error) => {
-        // A missing star field is a degraded scene, not a broken one: the solar
-        // system is the subject and it renders fine without a sky.
-        console.warn("could not load the Gaia star field:", error);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return catalogue;
-}
-
 interface StarfieldProps {
   readonly mode: StarMode;
 }
 
 export function Starfield({ mode }: StarfieldProps) {
   const catalogue = useStarCatalogue();
+  const { starSelection } = useSimulation();
   const pointsRef = useRef<Points>(null);
 
   const geometry = useMemo(() => {
@@ -112,6 +76,20 @@ export function Starfield({ mode }: StarfieldProps) {
     const colours = new Float32Array(indices.length * 3);
     const brightest = Math.min(...catalogue.magnitude);
 
+    /** Is this star inside the box dragged on the HR diagram? */
+    const isSelected = (index: number) => {
+      if (!starSelection) return true;
+      const colour = catalogue.bpRp[index];
+      const magnitude = catalogue.absoluteG[index];
+      if (colour === null || magnitude === null) return false;
+      return (
+        colour >= starSelection.colour[0] &&
+        colour <= starSelection.colour[1] &&
+        magnitude >= starSelection.magnitude[0] &&
+        magnitude <= starSelection.magnitude[1]
+      );
+    };
+
     indices.forEach((source, target) => {
       if (mode === "sky") {
         const [x, y, z] = catalogue.direction[source];
@@ -127,17 +105,22 @@ export function Starfield({ mode }: StarfieldProps) {
       }
 
       const [red, green, blue] = catalogue.colour[source];
-      const brightness = brightnessFromMagnitude(catalogue.magnitude[source], brightest);
-      colours[target * 3] = red * brightness;
-      colours[target * 3 + 1] = green * brightness;
-      colours[target * 3 + 2] = blue * brightness;
+      let brightness = brightnessFromMagnitude(catalogue.magnitude[source], brightest);
+
+      // A selection dims everything else rather than hiding it, so the highlighted
+      // population is seen *in context* — which is the point of linking the two views.
+      if (starSelection) brightness *= isSelected(source) ? 1.6 : 0.08;
+
+      colours[target * 3] = Math.min(1, red * brightness);
+      colours[target * 3 + 1] = Math.min(1, green * brightness);
+      colours[target * 3 + 2] = Math.min(1, blue * brightness);
     });
 
     const built = new BufferGeometry();
     built.setAttribute("position", new BufferAttribute(positions, 3));
     built.setAttribute("color", new BufferAttribute(colours, 3));
     return built;
-  }, [catalogue, mode]);
+  }, [catalogue, mode, starSelection]);
 
   // In sky mode the sphere is a backdrop, so it rides with the camera and never gets
   // closer no matter how far you travel — the same reason real constellations do not

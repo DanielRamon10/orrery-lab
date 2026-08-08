@@ -288,6 +288,47 @@ body {
   color: var(--ink-muted);
 }
 
+/* --- Hertzsprung-Russell panel ------------------------------------------ */
+
+.panel--hr {
+  padding-bottom: 10px;
+}
+
+.hr-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.hr-header h3 {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.hr-canvas {
+  display: block;
+  /* Crosshair rather than the default arrow: the canvas is a brush, and the cursor
+     is the only affordance saying so before the first drag. */
+  cursor: crosshair;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  touch-action: none;
+}
+
+.hr-note {
+  margin: 8px 0 0;
+  font-size: 0.66rem;
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+
+.hr-note sub {
+  font-size: 0.85em;
+}
+
 /* --- Readout ------------------------------------------------------------ */
 
 .readout-header {

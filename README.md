@@ -628,6 +628,53 @@ now rides in the colour, which additive blending handles for free.
 
 ---
 
+## Beyond the roadmap
+
+Three additions after the seven phases, each closing a gap the earlier work left open.
+
+### Three planets, where pairwise criteria stop working
+
+Two planets destabilise by approaching each other, which the Hill separation predicts
+well. Three destabilise mainly through **resonance overlap**: each pair sits comfortably
+outside its own Hill limit while resonances belonging to *different* pairs overlap in
+between, opening a chaotic band no pairwise number can see.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/phase3-three-body-dark.png">
+    <img src="docs/images/phase3-three-body-light.png" alt="Four panels comparing two- and three-planet systems: survival against separation, the gap between them, the separation each needs, and one three-planet system ejecting a planet after 850 orbits." width="100%">
+  </picture>
+</p>
+
+Same sampler, same separations, same integration length — the only difference is the
+third body:
+
+| | 2 planets | 3 planets |
+|---|---|---|
+| Survive with every pair above Gladman's threshold | **92.2%** | **80.4%** |
+| Δ needed for 99% survival | 7.2 | **8.8** |
+| Δ between 7 and 9 | 100% survive | 95–97% |
+
+Between Δ = 7 and 9 two-planet systems never fail and three-planet systems fail a few
+percent of the time — with **every adjacent pair individually predicted safe**. Panel (d)
+follows one of them: the three semi-major axes trade energy in steps for 850 orbits, then
+a planet is thrown out of the system entirely.
+
+### The Hertzsprung–Russell diagram, wired to the scene
+
+The [live orrery](https://danielramon10.github.io/orrery-lab/) now carries an HR diagram
+built from the same 9,000 Gaia rows the star field renders. **Drag a box on it** and
+those stars light up in space while the rest dim — switch the star field to `3D` and a
+population you selected by colour and brightness becomes a shape you can fly around.
+
+That link is the point. An HR diagram alone is a textbook figure; wired to the positions,
+"these stars are a distinct population" becomes something with a geometry.
+
+### Notebooks
+
+See [notebooks/](notebooks/) — three of them, committed with outputs.
+
+---
 ## Layout
 
 ```
@@ -669,13 +716,13 @@ web/src/
 ├── state/               the clock (a mutable ref, not React state — see comments)
 └── ui/                  time controls, scale toggles, live read-out
 
-tests/                   331 Python tests: conservation laws, round-trips, real values
+tests/                   347 Python tests: conservation laws, round-trips, real values
 data/cache/              exoplanet snapshot (gitignored, reproducible)
 docs/images/             generated figures and the scene screenshot
 .github/workflows/       CI (both languages + staleness check) and Pages deploy
 ```
 
-**435 tests in total** — 331 Python, 104 TypeScript. Everything runs offline except
+**451 tests in total** — 347 Python, 104 TypeScript. Everything runs offline except
 `fetch_exoplanets.py`.
 
 ---

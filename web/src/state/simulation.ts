@@ -63,6 +63,19 @@ export interface ViewRequest {
   readonly nonce: number;
 }
 
+/**
+ * A box dragged on the Hertzsprung-Russell diagram.
+ *
+ * Both bounds are inclusive. Stars inside it are highlighted in the 3D scene and the
+ * rest are dimmed rather than hidden, so a population is seen in its context.
+ */
+export interface StarSelection {
+  /** Colour index BP-RP, `[low, high]`. */
+  readonly colour: readonly [number, number];
+  /** Absolute magnitude, `[bright, faint]` — remember the scale runs backwards. */
+  readonly magnitude: readonly [number, number];
+}
+
 export interface SimulationValue {
   readonly clock: SimulationClock;
   readonly distanceMode: DistanceMode;
@@ -73,6 +86,9 @@ export interface SimulationValue {
   /** How the Gaia star field is drawn, or whether it is drawn at all. */
   readonly starMode: StarMode;
   readonly setStarMode: (mode: StarMode) => void;
+  /** The region of the HR diagram currently highlighted, if any. */
+  readonly starSelection: StarSelection | null;
+  readonly setStarSelection: (selection: StarSelection | null) => void;
   readonly setDistanceMode: (mode: DistanceMode) => void;
   readonly setRadiusMode: (mode: RadiusMode) => void;
   readonly setSelectedBodyId: (id: string | null) => void;

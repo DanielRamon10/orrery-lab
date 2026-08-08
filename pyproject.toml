@@ -52,3 +52,11 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "NPY"]
+
+[tool.ruff.lint.per-file-ignores]
+# Notebooks are prose with code in it, and idiomatic notebook code breaks a few rules
+# that are entirely reasonable for a module. Imports appear next to the section that
+# needs them rather than at the top (E402), plotting boilerplate is compressed onto one
+# line (E702), and narrative-length lines read better than wrapped ones (E501). The
+# genuine correctness rules — F, NPY, and the rest of B — still apply.
+"notebooks/*.ipynb" = ["E402", "E501", "E702", "B007", "B905"]

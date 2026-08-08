@@ -15,6 +15,7 @@ import {
   SimulationContext,
   type SimulationClock,
   type SimulationValue,
+  type StarSelection,
   type ViewRequest,
 } from "./simulation";
 
@@ -31,6 +32,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
   const [selectedBodyId, setSelectedBodyId] = useState<string | null>("earth");
   const [viewRequest, setViewRequest] = useState<ViewRequest>({ view: "all", nonce: 0 });
   const [starMode, setStarMode] = useState<StarMode>("sky");
+  const [starSelection, setStarSelection] = useState<StarSelection | null>(null);
 
   const requestView = useCallback((view: ViewRequest["view"]) => {
     setViewRequest((previous) => ({ view, nonce: previous.nonce + 1 }));
@@ -62,6 +64,8 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       requestView,
       starMode,
       setStarMode,
+      starSelection,
+      setStarSelection,
       setDistanceMode,
       setRadiusMode,
       setSelectedBodyId,
@@ -77,6 +81,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       viewRequest,
       requestView,
       starMode,
+      starSelection,
       seek,
       seekToNow,
       setPlaying,

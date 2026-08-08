@@ -628,6 +628,56 @@ chapado. O brilho agora vai na cor, que o blending aditivo resolve de graça.
 
 ---
 
+## Além do roteiro
+
+Três acréscimos depois das sete fases, cada um fechando uma lacuna que o trabalho
+anterior deixou aberta.
+
+### Três planetas, onde critérios de pares param de funcionar
+
+Dois planetas desestabilizam se aproximando um do outro, o que a separação de Hill prevê
+bem. Três desestabilizam principalmente por **sobreposição de ressonâncias**: cada par
+fica confortavelmente fora do próprio limite de Hill enquanto ressonâncias de pares
+*diferentes* se sobrepõem no meio, abrindo uma faixa caótica que nenhum número de par
+consegue enxergar.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/phase3-three-body-dark.png">
+    <img src="docs/images/phase3-three-body-light.png" alt="Quatro painéis comparando sistemas de dois e três planetas: sobrevivência contra separação, a diferença entre eles, a separação que cada um precisa, e um sistema de três planetas ejetando um planeta após 850 órbitas." width="100%">
+  </picture>
+</p>
+
+Mesmo amostrador, mesmas separações, mesma duração de integração — a única diferença é o
+terceiro corpo:
+
+| | 2 planetas | 3 planetas |
+|---|---|---|
+| Sobrevivem com todos os pares acima do limiar de Gladman | **92,2%** | **80,4%** |
+| Δ necessário para 99% de sobrevivência | 7,2 | **8,8** |
+| Δ entre 7 e 9 | 100% sobrevivem | 95–97% |
+
+Entre Δ = 7 e 9 sistemas de dois planetas nunca falham e os de três falham alguns por
+cento das vezes — com **cada par adjacente individualmente previsto como seguro**. O
+painel (d) acompanha um deles: os três semieixos trocam energia em degraus por 850
+órbitas, e então um planeta é expulso do sistema.
+
+### O diagrama de Hertzsprung–Russell, ligado à cena
+
+A [maquete ao vivo](https://danielramon10.github.io/orrery-lab/) agora traz um diagrama
+HR construído das mesmas 9.000 linhas do Gaia que o campo de estrelas renderiza.
+**Arraste uma caixa nele** e aquelas estrelas acendem no espaço enquanto as outras
+escurecem — mude o campo de estrelas para `3D` e uma população que você selecionou por
+cor e brilho vira uma forma pela qual você pode voar.
+
+Essa ligação é o ponto. Um diagrama HR sozinho é uma figura de livro-texto; ligado às
+posições, "estas estrelas são uma população distinta" vira algo com geometria.
+
+### Notebooks
+
+Veja [notebooks/](notebooks/) — três deles, commitados com as saídas.
+
+---
 ## Estrutura
 
 ```
@@ -669,13 +719,13 @@ web/src/
 ├── state/               o relógio (ref mutável, não estado do React — veja os comentários)
 └── ui/                  controles de tempo, escala, e leitura ao vivo
 
-tests/                   331 testes Python: leis de conservação, ida-e-volta, valores reais
+tests/                   347 testes Python: leis de conservação, ida-e-volta, valores reais
 data/cache/              snapshot de exoplanetas (gitignored, reproduzível)
 docs/images/             figuras geradas e o screenshot da cena
 .github/workflows/       CI (ambas as linguagens + checagem de desatualização) e deploy no Pages
 ```
 
-**435 testes no total** — 331 em Python, 104 em TypeScript. Tudo roda offline exceto o
+**451 testes no total** — 347 em Python, 104 em TypeScript. Tudo roda offline exceto o
 `fetch_exoplanets.py`.
 
 ---

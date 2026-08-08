@@ -44,10 +44,22 @@ The project already used this pattern once, for the Python/TypeScript ephemeris
 parity — a fast second implementation is only safe when something pins it to the
 reference.
 
+Two planets are not enough
+--------------------------
+Everything above concerns a *pair* of planets, where the Hill criterion is a genuine
+guide. Add a third and the mechanism of instability changes: neighbouring pairs can each
+be comfortably Hill-stable while the system as a whole comes apart, because the
+resonances belonging to different pairs **overlap** and open a chaotic region no
+pairwise criterion can see.
+
+:func:`build_multiplanet_dataset` measures that directly, by running two- and
+three-planet systems at matched separations and comparing survival. It is the reason
+this module generalised past the pair it was written for.
+
 Honest limits
 -------------
-* **Two planets, coplanar.** Real instability in multi-planet systems is often driven
-  by resonance overlap between three or more bodies, which this cannot show.
+* **Coplanar orbits.** Mutual inclination is a further destabilising degree of freedom
+  and is not explored here.
 * **The label is "unstable within the integration window"**, not "unstable ever".
   Systems can and do destabilise on timescales far longer than any window used here,
   so the negative class really means "survived this long".
@@ -73,6 +85,10 @@ __all__ = [
     "integrate_batch",
     "build_stability_dataset",
     "FEATURE_NAMES",
+    "MultiPlanetSample",
+    "MultiPlanetDataset",
+    "sample_planet_systems",
+    "build_multiplanet_dataset",
 ]
 
 #: Gladman's analytic threshold, ``2 * sqrt(3)``.
@@ -493,6 +509,275 @@ def build_stability_dataset(
         hill_separation=separation,
         max_axis_change=max_axis_change,
         min_separation_hill=min_separation,
+        escaped=escaped,
+        orbits_simulated=orbits,
+        sample=sample,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Three or more planets: where pairwise reasoning stops working
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MultiPlanetSample:
+    """A batch of systems with an arbitrary number of coplanar planets.
+
+    Arrays are shape ``(S, P)`` for ``S`` systems of ``P`` planets, ordered outward.
+    Kept separate from :class:`SystemSample` rather than replacing it, because the
+    two-planet path carries the phase 5 model's feature definitions and there is no
+    reason to disturb numbers that are already reported.
+    """
+
+    gms: np.ndarray
+    semi_major_axes: np.ndarray
+    eccentricities: np.ndarray
+    phases: np.ndarray
+    pericentres: np.ndarray
+
+    def __len__(self) -> int:
+        return self.gms.shape[0]
+
+    @property
+    def planet_count(self) -> int:
+        return self.gms.shape[1]
+
+    def adjacent_hill_separations(self, gm_star: float = GM_SUN) -> np.ndarray:
+        """``(S, P-1)`` separation of each neighbouring pair, in mutual Hill radii."""
+        return hill_separation(
+            self.gms[:, :-1],
+            self.gms[:, 1:],
+            self.semi_major_axes[:, :-1],
+            self.semi_major_axes[:, 1:],
+            gm_star,
+        )
+
+
+@dataclass(frozen=True)
+class MultiPlanetDataset:
+    """Survival of ``P``-planet systems, indexed by their tightest pair.
+
+    Attributes:
+        planet_count: How many planets each system had.
+        min_hill_separation: ``(S,)`` the smallest adjacent separation --- the quantity
+            a pairwise criterion would judge the system on.
+        labels: ``(S,)`` 1 for stable, 0 for disrupted.
+        max_axis_change: ``(S,)`` largest fractional change in any semi-major axis.
+        escaped: ``(S,)`` whether any planet became unbound.
+        orbits_simulated: Length of the run, in orbits of the innermost planet.
+        sample: The underlying draw.
+    """
+
+    planet_count: int
+    min_hill_separation: np.ndarray
+    labels: np.ndarray
+    max_axis_change: np.ndarray
+    escaped: np.ndarray
+    orbits_simulated: float
+    sample: MultiPlanetSample
+
+    def __len__(self) -> int:
+        return len(self.labels)
+
+    @property
+    def stable_fraction(self) -> float:
+        return float(np.mean(self.labels))
+
+    def survival_by_separation(
+        self, edges: np.ndarray, minimum_per_bin: int = 10
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Survival rate binned by the tightest adjacent separation.
+
+        Returns:
+            ``(centres, rate, count)``, keeping only bins holding enough systems to
+            mean anything.
+        """
+        centres, rates, counts = [], [], []
+        for low, high in zip(edges[:-1], edges[1:], strict=True):
+            inside = (self.min_hill_separation >= low) & (self.min_hill_separation < high)
+            if inside.sum() >= minimum_per_bin:
+                centres.append(0.5 * (low + high))
+                rates.append(float(self.labels[inside].mean()))
+                counts.append(int(inside.sum()))
+        return np.array(centres), np.array(rates), np.array(counts)
+
+
+def sample_planet_systems(
+    count: int,
+    planets: int = 2,
+    seed: int = 20260808,
+    hill_separation_range: tuple[float, float] = (2.0, 14.0),
+    log_mass_range: tuple[float, float] = (-6.0, -4.0),
+    max_eccentricity: float = 0.05,
+    gm_star: float = GM_SUN,
+) -> MultiPlanetSample:
+    """Draw random systems of ``planets`` coplanar planets.
+
+    Each **adjacent** pair gets its own separation drawn from
+    ``hill_separation_range``, and the semi-major axes are built outward from the
+    innermost. Sampling separations rather than axes keeps the draws concentrated where
+    the stability boundary lives, exactly as in the two-planet case.
+
+    The default mass and eccentricity ranges are narrower than
+    :func:`sample_two_planet_systems` uses. That is deliberate for the comparison in
+    :func:`build_multiplanet_dataset`: with heavy or eccentric planets a three-planet
+    system is unstable almost everywhere, and the effect worth seeing --- pairs that are
+    individually fine failing collectively --- would be buried under it.
+
+    Args:
+        count: Number of systems.
+        planets: Planets per system, at least two.
+        seed: Fixed for reproducibility.
+        hill_separation_range: Range for each adjacent separation.
+        log_mass_range: ``log10`` of planet mass relative to the star.
+        max_eccentricity: Eccentricities drawn uniformly in ``[0, this]``.
+        gm_star: Central mass.
+
+    Raises:
+        ValueError: If fewer than two planets or a non-positive count is requested.
+    """
+    if planets < 2:
+        raise ValueError(f"need at least two planets to have a separation; got {planets}")
+    if count < 1:
+        raise ValueError(f"count must be positive; got {count}")
+
+    generator = np.random.default_rng(seed)
+
+    gms = gm_star * 10.0 ** generator.uniform(*log_mass_range, size=(count, planets))
+    separations = generator.uniform(*hill_separation_range, size=(count, planets - 1))
+
+    axes = np.empty((count, planets))
+    axes[:, 0] = INNER_SEMI_MAJOR_AXIS_AU
+
+    # The same inversion as the two-planet sampler, applied outward pair by pair:
+    #   a_{k+1} (1 - D k / 2) = a_k (1 + D k / 2),  k = ((m_k + m_{k+1}) / 3 M*)^(1/3)
+    for index in range(planets - 1):
+        mass_factor = ((gms[:, index] + gms[:, index + 1]) / (3.0 * gm_star)) ** (1.0 / 3.0)
+        half = 0.5 * separations[:, index] * mass_factor
+        axes[:, index + 1] = axes[:, index] * (1.0 + half) / (1.0 - half)
+
+    return MultiPlanetSample(
+        gms=gms,
+        semi_major_axes=axes,
+        eccentricities=generator.uniform(0.0, max_eccentricity, size=(count, planets)),
+        phases=generator.uniform(0.0, 2.0 * np.pi, size=(count, planets)),
+        pericentres=generator.uniform(0.0, 2.0 * np.pi, size=(count, planets)),
+    )
+
+
+def _multiplanet_initial_state(
+    sample: MultiPlanetSample, gm_star: float
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Barycentric state for a multi-planet batch.
+
+    Returns shapes ``(S, P+1, 3)``, ``(S, P+1, 3)`` and ``(S, P+1)``, with body 0 the
+    star.
+    """
+    count, planets = sample.gms.shape
+    bodies = planets + 1
+
+    positions = np.zeros((count, bodies, 3))
+    velocities = np.zeros((count, bodies, 3))
+    gms = np.concatenate([np.full((count, 1), gm_star), sample.gms], axis=1)
+
+    for index in range(planets):
+        axis = sample.semi_major_axes[:, index]
+        eccentricity = sample.eccentricities[:, index]
+        phase = sample.phases[:, index]
+        pericentre = sample.pericentres[:, index]
+
+        semi_latus_rectum = axis * (1.0 - eccentricity**2)
+        radius = semi_latus_rectum / (1.0 + eccentricity * np.cos(phase))
+        speed_scale = np.sqrt(gm_star / semi_latus_rectum)
+
+        cos_phase, sin_phase = np.cos(phase), np.sin(phase)
+        x_perifocal = radius * cos_phase
+        y_perifocal = radius * sin_phase
+        vx_perifocal = -speed_scale * sin_phase
+        vy_perifocal = speed_scale * (eccentricity + cos_phase)
+
+        cos_peri, sin_peri = np.cos(pericentre), np.sin(pericentre)
+        body = index + 1
+        positions[:, body, 0] = x_perifocal * cos_peri - y_perifocal * sin_peri
+        positions[:, body, 1] = x_perifocal * sin_peri + y_perifocal * cos_peri
+        velocities[:, body, 0] = vx_perifocal * cos_peri - vy_perifocal * sin_peri
+        velocities[:, body, 1] = vx_perifocal * sin_peri + vy_perifocal * cos_peri
+
+    total_gm = gms.sum(axis=1)
+    positions -= (np.einsum("sn,snk->sk", gms, positions) / total_gm[:, None])[:, None, :]
+    velocities -= (np.einsum("sn,snk->sk", gms, velocities) / total_gm[:, None])[:, None, :]
+
+    return positions, velocities, gms
+
+
+def build_multiplanet_dataset(
+    count: int = 1200,
+    planets: int = 2,
+    orbits: float = 2000.0,
+    steps_per_orbit: int = 40,
+    checks_per_run: int = 30,
+    axis_change_threshold: float = 0.20,
+    seed: int = 20260808,
+    gm_star: float = GM_SUN,
+    **sample_options,
+) -> MultiPlanetDataset:
+    """Simulate systems of ``planets`` planets and label each stable or disrupted.
+
+    The point of allowing ``planets > 2`` is that pairwise stability criteria stop
+    working there. Two planets destabilise by approaching each other, which the Hill
+    separation predicts well. Three destabilise mainly through **resonance overlap**:
+    each pair can sit comfortably outside its own Hill limit while resonances belonging
+    to *different* pairs overlap in between, opening a chaotic band that no pairwise
+    number can see.
+
+    Running this at ``planets=2`` and ``planets=3`` with the same separation range and
+    the same integration length isolates that effect, because the only difference
+    between the two runs is the presence of a third body.
+
+    Args:
+        count: Number of systems.
+        planets: Planets per system.
+        orbits: Length of the run, in orbits of the innermost planet.
+        steps_per_orbit: Integration steps per innermost orbit.
+        checks_per_run: How often to pause and record diagnostics.
+        axis_change_threshold: Fractional change counting as disruption.
+        seed: Passed to :func:`sample_planet_systems`.
+        gm_star: Central mass.
+        **sample_options: Forwarded to :func:`sample_planet_systems`.
+    """
+    sample = sample_planet_systems(
+        count, planets=planets, seed=seed, gm_star=gm_star, **sample_options
+    )
+    positions, velocities, gms = _multiplanet_initial_state(sample, gm_star)
+
+    inner_period = 2.0 * np.pi * np.sqrt(INNER_SEMI_MAJOR_AXIS_AU**3 / gm_star)
+    dt = inner_period / steps_per_orbit
+    total_steps = int(orbits * steps_per_orbit)
+    steps_per_check = max(1, total_steps // checks_per_run)
+
+    initial_axes = _osculating_axes(positions, velocities, gms, gm_star)
+    max_axis_change = np.zeros(count)
+    escaped = np.zeros(count, dtype=bool)
+
+    completed = 0
+    while completed < total_steps:
+        chunk = min(steps_per_check, total_steps - completed)
+        positions, velocities = integrate_batch(positions, velocities, gms, chunk, dt)
+        completed += chunk
+
+        axes = _osculating_axes(positions, velocities, gms, gm_star)
+        change = np.max(np.abs(axes - initial_axes) / np.abs(initial_axes), axis=1)
+        max_axis_change = np.maximum(max_axis_change, change)
+        escaped |= np.any(axes < 0.0, axis=1)
+
+    unstable = (max_axis_change > axis_change_threshold) | escaped
+
+    return MultiPlanetDataset(
+        planet_count=planets,
+        min_hill_separation=sample.adjacent_hill_separations(gm_star).min(axis=1),
+        labels=(~unstable).astype(int),
+        max_axis_change=max_axis_change,
         escaped=escaped,
         orbits_simulated=orbits,
         sample=sample,
