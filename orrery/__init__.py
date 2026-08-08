@@ -23,6 +23,11 @@ Layout
 ``ephemeris``           Elements -> 3D state vectors, orbit sampling, frame rotations.
 ``nbody``               Gravitational N-body integrators and conservation diagnostics.
 ``initial_conditions``  Ephemeris -> barycentric starting states for the integrator.
+``statistics``          Regression with error bars, resonances, Monte Carlo tests.
+``exoplanets``          The confirmed-planet catalogue, and its selection effects.
+``koi``                 Kepler Objects of Interest --- labelled, and full of leakage.
+``stability``           Simulating two-planet systems to generate stability labels.
+``models``              The two learning problems, with the baselines that check them.
 """
 
 from __future__ import annotations

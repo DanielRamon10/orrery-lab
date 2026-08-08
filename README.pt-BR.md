@@ -51,7 +51,7 @@ tabela de elementos estivessem errados em qualquer ponto, esse número não cair
 | **2. Maquete 3D no navegador** | Cena React + Three.js, órbitas reais, controle de tempo, modos de escala honesta/legível, 104 testes incluindo paridade Python↔TypeScript | ✅ **pronta** |
 | **3. Simulação N-corpos** | Quatro integradores, ordens de convergência medidas, o crossover simplético, e um diagnóstico que separa perturbação real de erro numérico | ✅ **pronta** |
 | **4. Camada estatística** | Regressão com barras de erro reais, Titius–Bode como predição sem parâmetros, busca de ressonâncias, teste de hipótese por Monte Carlo, e 5.981 exoplanetas para contexto | ✅ **pronta** |
-| 5. Machine learning | Classificador de exoplanetas, preditor de estabilidade orbital treinado nas nossas próprias simulações | planejada |
+| **5. Machine learning** | Preditor de estabilidade treinado em 2.500 sistemas que o próprio projeto simulou, comparado contra o critério analítico de Hill; mais uma falha de vazamento de alvo demonstrada em dados reais do Kepler | ✅ **pronta** |
 | 6. Via Láctea | Catálogo Gaia DR3 em 3D, diagrama HR, estrutura galáctica, clustering estelar | planejada |
 | 7. Polimento de portfólio | Notebooks, CI, demo ao vivo, documentação | planejada |
 
@@ -109,8 +109,15 @@ python scripts/plot_energy_drift.py --quick   # spans mais curtos
 Reproduzir a estatística:
 
 ```bash
-python scripts/fetch_exoplanets.py    # uma chamada de rede, depois fica em cache
+python scripts/fetch_exoplanets.py --koi   # uma chamada de rede, depois fica em cache
 python scripts/plot_statistics.py
+```
+
+Treinar os modelos (simula 2.500 sistemas, ~2,5 min):
+
+```bash
+python scripts/train_models.py
+python scripts/train_models.py --quick
 ```
 
 Rodar a cena 3D:
@@ -419,6 +426,78 @@ o método de descoberta anexado a cada planeta, para que se possa condicionar ne
 
 ---
 
+## Fase 5 — dois modelos, e os baselines que os mantêm honestos
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/phase5-models-dark.png">
+    <img src="docs/images/phase5-models-light.png" alt="Quatro painéis: taxa de sobrevivência contra separação orbital a partir de 2.500 simulações, curvas ROC comparando modelo aprendido, limiar ajustado e critério de Gladman, importância de features por permutação, e a comparação de vazamento no KOI." width="100%">
+  </picture>
+</p>
+
+### O dataset é gerado, não baixado
+
+Os rótulos do modelo de estabilidade vêm de **simular cada sistema**. 2.500
+configurações de dois planetas são sorteadas, cada uma integrada por 1.200 órbitas com
+a mesma gravidade construída na Fase 3, e rotulada pelo que de fato aconteceu —
+mudança de semieixo maior acima de 20%, encontro próximo dentro de um raio de Hill, ou
+escape.
+
+Isso torna a cadeia inteira auditável: se os rótulos estão errados, a física está
+errada — e a física tem 44 testes em cima dela.
+
+Fazer isso em escala exigiu um **integrador em lote**. O da Fase 3 avança um sistema
+por vez, o que é certo para o Sistema Solar e inviável para 2.500. Uma reimplementação
+rápida de física existente só é segura se algo a prender ao original, então o
+`tests/test_stability.py` afirma que os dois concordam a 10⁻¹¹ ao longo de 400 passos —
+a mesma proteção que a paridade Python↔TypeScript dá na Fase 2.
+
+### O modelo ganhou o lugar dele?
+
+Já existe uma resposta analítica aqui: o **critério de Gladman**, Δ > 2√3 ≈ 3,46, onde
+Δ é a separação orbital em raios de Hill mútuos. Três abordagens, mesma partição de teste:
+
+| Abordagem | Acurácia | ROC AUC |
+|---|---|---|
+| Critério de Gladman (Δ > 3,46, como publicado) | 0,796 | — |
+| **Limiar ajustado** (Δ > 4,64, ajustado no treino) | 0,816 | 0,880 |
+| Gradient boosting (9 features) | **0,857** | **0,939** |
+
+A linha do meio é a que quase todo mundo omite, e é a que importa. Bater um limiar fixo
+de livro-texto prova pouco quando simplesmente *mover* esse limiar já rende dois pontos.
+A afirmação que vale é que o modelo bate **o melhor corte único possível na mesma
+feature** por 4,1 pontos — e validação cruzada de 5 folds põe o AUC em 0,941 ± 0,007.
+
+Por que ele consegue: a importância por permutação mostra a separação dominando, como a
+física manda, mas a excentricidade contribuindo de forma mensurável — e excentricidade é
+exatamente o que a derivação de órbitas circulares do Gladman **não consegue** usar. O
+limiar ajustado cair em Δ = 4,64 em vez de 3,46 diz a mesma coisa em um número.
+
+### A armadilha de vazamento, em dados reais do Kepler
+
+A tabela KOI tem 2.747 planetas confirmados e 4.839 falsos positivos — e cinco colunas
+que parecem features excelentes e são, na verdade, a *saída do processo de rotulagem*:
+`koi_score` e quatro colunas `koi_fpflag_*` registrando **por que** um sinal foi rejeitado.
+
+| Features | Acurácia | ROC AUC |
+|---|---|---|
+| Só físicas — curva de luz + estrela hospedeira | 0,9322 | 0,9789 |
+| Com as flags de vetting | **0,9955** | **0,9989** |
+
+A segunda linha é a inútil. Aqueles 6,3 pontos são o modelo aprendendo a ler o gabarito,
+e `koi_fpflag_ss` ("eclipse estelar") sozinha responde pela maior parte. O
+`orrery/koi.py` separa as colunas explicitamente para não se cair na armadilha por
+acidente, e o `tests/test_models.py` afirma que o gap existe — uma demonstração só
+funciona se a armadilha for mesmo uma armadilha.
+
+### Limites declarados
+
+Dois planetas, coplanares, estrela como massa pontual, sem marés nem relatividade. O
+rótulo significa "sobreviveu 1.200 órbitas", não "estável para sempre" — sistemas reais
+desestabilizam em escalas muito maiores que qualquer janela usada aqui.
+
+---
+
 ## Estrutura
 
 ```
@@ -431,14 +510,19 @@ orrery/                  a biblioteca Python
 ├── nbody.py             quatro integradores + diagnósticos de conservação
 ├── initial_conditions.py  efeméride -> estados iniciais baricêntricos
 ├── statistics.py        regressão com barras de erro, ressonâncias, Monte Carlo
-└── exoplanets.py        o arquivo da NASA, com os efeitos de seleção documentados
+├── exoplanets.py        o arquivo da NASA, com os efeitos de seleção documentados
+├── koi.py               sinais rotulados do Kepler, com as colunas vazadas isoladas
+├── stability.py         N-corpos em lote que gera os rótulos de estabilidade
+└── models.py            os dois problemas de aprendizado e seus baselines
 
 scripts/
 ├── solar_system_report.py   a visão em tabela: onde tudo está, agora
 ├── plot_orbits.py           a figura de validação da fase 1
 ├── plot_energy_drift.py     o estudo de integradores da fase 3
 ├── plot_statistics.py       a figura da fase 4
+├── train_models.py          os modelos e a figura da fase 5
 ├── fetch_exoplanets.py      o único script que usa a rede
+├── check_generated_data.py  o check de desatualização do CI, comparado numericamente
 └── export_web_data.py       gera a tabela de elementos e o fixture de paridade
 
 web/src/
@@ -451,13 +535,13 @@ web/src/
 ├── state/               o relógio (ref mutável, não estado do React — veja os comentários)
 └── ui/                  controles de tempo, escala, e leitura ao vivo
 
-tests/                   250 testes Python: leis de conservação, ida-e-volta, valores reais
+tests/                   294 testes Python: leis de conservação, ida-e-volta, valores reais
 data/cache/              snapshot de exoplanetas (gitignored, reproduzível)
 docs/images/             figuras geradas e o screenshot da cena
 .github/workflows/       CI (ambas as linguagens + checagem de desatualização) e deploy no Pages
 ```
 
-**354 testes no total** — 250 em Python, 104 em TypeScript. Tudo roda offline exceto o
+**398 testes no total** — 294 em Python, 104 em TypeScript. Tudo roda offline exceto o
 `fetch_exoplanets.py`.
 
 ---

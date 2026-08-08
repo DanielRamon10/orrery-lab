@@ -50,7 +50,7 @@ table were wrong anywhere, this number would not land there.
 | **2. 3D orrery in the browser** | React + Three.js scene, real orbits, time scrubber, honest/readable scale modes, 104 tests including Python↔TypeScript parity | ✅ **done** |
 | **3. N-body simulation** | Four integrators, measured convergence orders, the symplectic crossover, and a diagnostic separating real perturbation from numerical error | ✅ **done** |
 | **4. Statistics layer** | Regression with real error bars, Titius–Bode as a parameter-free prediction, resonance search, a Monte Carlo hypothesis test, and 5,981 exoplanets for context | ✅ **done** |
-| 5. Machine learning | Exoplanet classifier, orbital-stability predictor trained on our own simulations | planned |
+| **5. Machine learning** | Stability predictor trained on 2,500 systems this project simulated itself, benchmarked against the analytic Hill criterion; plus a worked target-leakage failure on real Kepler data | ✅ **done** |
 | 6. The Milky Way | Gaia DR3 star catalogue in 3D, HR diagram, galactic structure, stellar clustering | planned |
 | 7. Portfolio polish | Notebooks, CI, live demo, documentation | planned |
 
@@ -108,8 +108,15 @@ python scripts/plot_energy_drift.py --quick   # shorter spans
 Reproduce the statistics:
 
 ```bash
-python scripts/fetch_exoplanets.py    # one network call, cached afterwards
+python scripts/fetch_exoplanets.py --koi   # one network call, cached afterwards
 python scripts/plot_statistics.py
+```
+
+Train the models (simulates 2,500 systems, ~2.5 min):
+
+```bash
+python scripts/train_models.py
+python scripts/train_models.py --quick
 ```
 
 Run the 3D scene:
@@ -416,6 +423,81 @@ attached to every planet so it can be conditioned on.
 
 ---
 
+## Phase 5 — two models, and the baselines that keep them honest
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/phase5-models-dark.png">
+    <img src="docs/images/phase5-models-light.png" alt="Four panels: survival rate against orbital separation from 2,500 simulations, ROC curves comparing a learned model with a tuned threshold and Gladman's criterion, permutation feature importance, and the KOI leakage comparison." width="100%">
+  </picture>
+</p>
+
+### The dataset is generated, not downloaded
+
+The stability model's labels come from **simulating every system**. 2,500 two-planet
+configurations are drawn at random, each integrated for 1,200 orbits with the same
+gravity built in phase 3, and labelled by what actually happened — semi-major axis
+change beyond 20%, a close encounter inside one Hill radius, or an escape.
+
+That means the entire chain is auditable: if the labels are wrong, the physics is
+wrong, and the physics has 44 tests on it.
+
+Doing that at scale needed a **batched integrator** — the phase 3 one steps a single
+system at a time, which is right for the solar system and hopeless for 2,500 of them.
+The batched version carries a leading axis and steps everything at once. A fast
+reimplementation of existing physics is only safe if something pins it to the original,
+so `tests/test_stability.py` asserts the two agree to 1e-11 over 400 steps — the same
+guard the Python↔TypeScript ephemeris parity provides in phase 2.
+
+### Did the model earn its place?
+
+There is already an analytic answer here: **Gladman's criterion**, Δ > 2√3 ≈ 3.46,
+where Δ is the orbital separation in mutual Hill radii. So three approaches are
+measured side by side on the same held-out split:
+
+| Approach | Accuracy | ROC AUC |
+|---|---|---|
+| Gladman criterion (Δ > 3.46, as published) | 0.796 | — |
+| **Tuned threshold** (Δ > 4.64, fitted on train) | 0.816 | 0.880 |
+| Gradient boosting (9 features) | **0.857** | **0.939** |
+
+The middle row is the one most write-ups leave out, and it is the one that matters.
+Beating a fixed textbook threshold proves little when simply *moving* that threshold
+buys two points. The claim worth making is that the model beats **the best possible
+single cut on the same feature** by 4.1 points — and 5-fold cross-validation puts the
+AUC at 0.941 ± 0.007.
+
+Why it can: permutation importance shows separation dominating, as the physics says it
+must, but eccentricity contributing measurably — and eccentricity is exactly what
+Gladman's circular-orbit derivation structurally cannot use. The fitted threshold
+landing at Δ = 4.64 rather than 3.46 says the same thing in one number.
+
+### The leakage trap, on real Kepler data
+
+The KOI table has 2,747 confirmed planets and 4,839 false positives — and five columns
+that look like excellent features and are in fact the *output of the labelling
+process*: `koi_score` and four `koi_fpflag_*` columns recording **why** a signal was
+rejected.
+
+| Features | Accuracy | ROC AUC |
+|---|---|---|
+| Physical only — light curve + host star | 0.9322 | 0.9789 |
+| With the vetting flags | **0.9955** | **0.9989** |
+
+The second row is the worthless one. Those 6.3 points are the model learning to read
+the answer key, and `koi_fpflag_ss` ("stellar eclipse") alone accounts for most of it.
+`orrery/koi.py` partitions the columns explicitly so the trap cannot be walked into by
+accident, and `tests/test_models.py` asserts the gap exists — a demonstration only
+works if the trap is really a trap.
+
+### Stated limits
+
+Two planets, coplanar, point-mass star, no tides or relativity. The label means
+"survived 1,200 orbits", not "stable forever" — real systems destabilise on timescales
+far longer than any window used here.
+
+---
+
 ## Layout
 
 ```
@@ -428,14 +510,19 @@ orrery/                  the Python library
 ├── nbody.py             four integrators + conservation diagnostics
 ├── initial_conditions.py  ephemeris -> barycentric starting states
 ├── statistics.py        regression with error bars, resonances, Monte Carlo
-└── exoplanets.py        the NASA archive, with its selection effects documented
+├── exoplanets.py        the NASA archive, with its selection effects documented
+├── koi.py               labelled Kepler signals, with the leaky columns quarantined
+├── stability.py         batched N-body that generates the stability labels
+└── models.py            the two learning problems and their baselines
 
 scripts/
 ├── solar_system_report.py   the table view: where everything is, right now
 ├── plot_orbits.py           the phase 1 validation figure
 ├── plot_energy_drift.py     the phase 3 integrator study
 ├── plot_statistics.py       the phase 4 figure
+├── train_models.py          the phase 5 models and figure
 ├── fetch_exoplanets.py      the only script that touches the network
+├── check_generated_data.py  CI's staleness check, compared numerically
 └── export_web_data.py       generates the scene's element table + parity fixture
 
 web/src/
@@ -448,13 +535,13 @@ web/src/
 ├── state/               the clock (a mutable ref, not React state — see comments)
 └── ui/                  time controls, scale toggles, live read-out
 
-tests/                   250 Python tests: conservation laws, round-trips, real values
+tests/                   294 Python tests: conservation laws, round-trips, real values
 data/cache/              exoplanet snapshot (gitignored, reproducible)
 docs/images/             generated figures and the scene screenshot
 .github/workflows/       CI (both languages + staleness check) and Pages deploy
 ```
 
-**354 tests in total** — 250 Python, 104 TypeScript. Everything runs offline except
+**398 tests in total** — 294 Python, 104 TypeScript. Everything runs offline except
 `fetch_exoplanets.py`.
 
 ---
