@@ -51,7 +51,7 @@ table were wrong anywhere, this number would not land there.
 | **3. N-body simulation** | Four integrators, measured convergence orders, the symplectic crossover, and a diagnostic separating real perturbation from numerical error | ✅ **done** |
 | **4. Statistics layer** | Regression with real error bars, Titius–Bode as a parameter-free prediction, resonance search, a Monte Carlo hypothesis test, and 5,981 exoplanets for context | ✅ **done** |
 | **5. Machine learning** | Stability predictor trained on 2,500 systems this project simulated itself, benchmarked against the analytic Hill criterion; plus a worked target-leakage failure on real Kepler data | ✅ **done** |
-| 6. The Milky Way | Gaia DR3 star catalogue in 3D, HR diagram, galactic structure, stellar clustering | planned |
+| **6. The Milky Way** | 120,000 Gaia DR3 stars: the HR diagram, the galactic disc in 3D, Malmquist bias measured — and the real sky inside the browser scene | ✅ **done** |
 | 7. Portfolio polish | Notebooks, CI, live demo, documentation | planned |
 
 ---
@@ -117,6 +117,14 @@ Train the models (simulates 2,500 systems, ~2.5 min):
 ```bash
 python scripts/train_models.py
 python scripts/train_models.py --quick
+```
+
+Bring in the stars:
+
+```bash
+python scripts/fetch_gaia.py          # 120,000 Gaia DR3 sources
+python scripts/plot_milky_way.py
+python scripts/export_star_data.py    # feeds the real sky into the 3D scene
 ```
 
 Run the 3D scene:
@@ -498,6 +506,77 @@ far longer than any window used here.
 
 ---
 
+## Phase 6 — 120,000 real stars, and what the sample is not
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/phase6-milkyway-dark.png">
+    <img src="docs/images/phase6-milkyway-light.png" alt="Four panels: the Hertzsprung-Russell diagram from the whole Gaia sample, the same within 25 parsecs showing a clean main sequence, the colour-brightness correlation reversing with distance, and the galactic disc seen edge-on." width="100%">
+  </picture>
+</p>
+
+Everything before this lives inside the solar system, where distance is measured by
+radar and the geometry is exact. Stepping outside means meeting the project's first
+genuinely **uncertain** measurement — and resisting the urge to hide that behind a
+one-line conversion.
+
+### Parallax is not a distance
+
+Gaia measures parallax; distance is `1/parallax`. That formula is where most casual
+uses of this catalogue go wrong, in three separate ways:
+
+- **Negative parallaxes are real.** For a distant star the true parallax is smaller
+  than the noise, so noise pushes some measurements below zero. Inverting one gives a
+  negative distance that then quietly poisons every plot downstream.
+- **The reciprocal is biased** even when positive, badly so past ~20% fractional error.
+- **A magnitude-limited sample is not a volume-limited one.**
+
+`distance_from_parallax` does not solve these — they are not solvable with a formula.
+It **returns `nan`** below a stated signal-to-noise, keeping the discarded stars
+visible to the caller instead of silently absent.
+
+### The bias, measured rather than described
+
+The first version of the HR-diagram test asserted the main sequence — redder stars are
+fainter — and **failed**, correlation −0.49 instead of positive. Not a bug. This sample
+reaches only G = 8.6, so past a hundred parsecs nothing but giants is bright enough to
+appear, and giants are red *and* luminous.
+
+| Distance shell | Stars | corr(colour, M_G) | Faintest visible |
+|---|---|---|---|
+| 0–25 pc | 797 | **+0.875** | M = +11.9 |
+| 25–50 pc | 3,388 | +0.504 | +6.6 |
+| 50–100 pc | 11,407 | +0.090 | +5.1 |
+| 100–200 pc | 23,696 | −0.268 | +3.6 |
+| 200–500 pc | 46,889 | **−0.374** | +2.1 |
+
+**No physical relationship reverses with distance.** A brightness-limited survey does,
+by dropping faint stars first — Malmquist bias, visible in one table. The tests now
+assert the main sequence *within 25 parsecs*, where the sample is nearly
+volume-limited, and separately assert that the correlation flips.
+
+### A rotation matrix that nearly got away
+
+The ICRS→galactic transform is built from three angles rather than pasted in as nine
+numbers. The first attempt was orthogonal, had determinant exactly 1, and put the north
+galactic pole precisely at b = +90° — while placing the **galactic centre at l = 90°
+instead of 0°**. A quarter-turn error that every internal check passed. Only comparison
+against the published matrix caught it, and a test now pins all nine elements.
+
+### The sky in the scene is now the real sky
+
+`export_star_data.py` feeds 9,000 Gaia sources into the browser, replacing phase 2's
+procedural stars. The constellations are the constellations. A **Stars** control
+switches between the view from here and their true 3D positions in parsecs — pull the
+camera back in that mode and the flattened disc appears, because it is in the data.
+
+Building it turned up a quiet failure worth knowing: a per-vertex `size` attribute on
+a three.js `PointsMaterial` **does nothing**. That material has one scalar size for the
+whole cloud, so every star rendered identically and the sky came out flat. Brightness
+now rides in the colour, which additive blending handles for free.
+
+---
+
 ## Layout
 
 ```
@@ -513,7 +592,8 @@ orrery/                  the Python library
 ├── exoplanets.py        the NASA archive, with its selection effects documented
 ├── koi.py               labelled Kepler signals, with the leaky columns quarantined
 ├── stability.py         batched N-body that generates the stability labels
-└── models.py            the two learning problems and their baselines
+├── models.py            the two learning problems and their baselines
+└── gaia.py              the star catalogue, and the honesty of parallax
 
 scripts/
 ├── solar_system_report.py   the table view: where everything is, right now
@@ -521,6 +601,9 @@ scripts/
 ├── plot_energy_drift.py     the phase 3 integrator study
 ├── plot_statistics.py       the phase 4 figure
 ├── train_models.py          the phase 5 models and figure
+├── plot_milky_way.py        the phase 6 figure
+├── fetch_gaia.py            downloads the Gaia sample
+├── export_star_data.py      packs the real sky for the browser
 ├── fetch_exoplanets.py      the only script that touches the network
 ├── check_generated_data.py  CI's staleness check, compared numerically
 └── export_web_data.py       generates the scene's element table + parity fixture
@@ -535,13 +618,13 @@ web/src/
 ├── state/               the clock (a mutable ref, not React state — see comments)
 └── ui/                  time controls, scale toggles, live read-out
 
-tests/                   294 Python tests: conservation laws, round-trips, real values
+tests/                   331 Python tests: conservation laws, round-trips, real values
 data/cache/              exoplanet snapshot (gitignored, reproducible)
 docs/images/             generated figures and the scene screenshot
 .github/workflows/       CI (both languages + staleness check) and Pages deploy
 ```
 
-**398 tests in total** — 294 Python, 104 TypeScript. Everything runs offline except
+**435 tests in total** — 331 Python, 104 TypeScript. Everything runs offline except
 `fetch_exoplanets.py`.
 
 ---

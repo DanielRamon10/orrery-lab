@@ -52,7 +52,7 @@ tabela de elementos estivessem errados em qualquer ponto, esse número não cair
 | **3. Simulação N-corpos** | Quatro integradores, ordens de convergência medidas, o crossover simplético, e um diagnóstico que separa perturbação real de erro numérico | ✅ **pronta** |
 | **4. Camada estatística** | Regressão com barras de erro reais, Titius–Bode como predição sem parâmetros, busca de ressonâncias, teste de hipótese por Monte Carlo, e 5.981 exoplanetas para contexto | ✅ **pronta** |
 | **5. Machine learning** | Preditor de estabilidade treinado em 2.500 sistemas que o próprio projeto simulou, comparado contra o critério analítico de Hill; mais uma falha de vazamento de alvo demonstrada em dados reais do Kepler | ✅ **pronta** |
-| 6. Via Láctea | Catálogo Gaia DR3 em 3D, diagrama HR, estrutura galáctica, clustering estelar | planejada |
+| **6. Via Láctea** | 120.000 estrelas do Gaia DR3: diagrama HR, o disco galáctico em 3D, viés de Malmquist medido — e o céu real dentro da cena no navegador | ✅ **pronta** |
 | 7. Polimento de portfólio | Notebooks, CI, demo ao vivo, documentação | planejada |
 
 ---
@@ -118,6 +118,14 @@ Treinar os modelos (simula 2.500 sistemas, ~2,5 min):
 ```bash
 python scripts/train_models.py
 python scripts/train_models.py --quick
+```
+
+Trazer as estrelas:
+
+```bash
+python scripts/fetch_gaia.py          # 120.000 fontes do Gaia DR3
+python scripts/plot_milky_way.py
+python scripts/export_star_data.py    # leva o céu real para a cena 3D
 ```
 
 Rodar a cena 3D:
@@ -498,6 +506,77 @@ desestabilizam em escalas muito maiores que qualquer janela usada aqui.
 
 ---
 
+## Fase 6 — 120.000 estrelas reais, e o que a amostra não é
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/phase6-milkyway-dark.png">
+    <img src="docs/images/phase6-milkyway-light.png" alt="Quatro painéis: diagrama de Hertzsprung-Russell da amostra completa do Gaia, o mesmo dentro de 25 parsecs mostrando sequência principal limpa, a correlação cor-brilho invertendo com a distância, e o disco galáctico visto de perfil." width="100%">
+  </picture>
+</p>
+
+Tudo antes disto vive dentro do Sistema Solar, onde distância se mede por radar e a
+geometria é exata. Sair significa encontrar a primeira medida genuinamente **incerta**
+do projeto — e resistir à tentação de escondê-la atrás de uma conversão de uma linha.
+
+### Paralaxe não é distância
+
+O Gaia mede paralaxe; distância sai de `1/paralaxe`. É aí que quase todo uso casual
+deste catálogo erra, de três formas distintas:
+
+- **Paralaxes negativas são reais.** Para uma estrela distante, o valor verdadeiro é
+  menor que o ruído, e o ruído empurra algumas medidas abaixo de zero. Inverter uma
+  dá distância negativa, que então envenena silenciosamente tudo depois.
+- **O recíproco é enviesado** mesmo quando positivo, e feio a partir de ~20% de erro fracionário.
+- **Amostra limitada por magnitude não é limitada por volume.**
+
+A `distance_from_parallax` não resolve isso — não dá para resolver com fórmula. Ela
+**retorna `nan`** abaixo de um limiar declarado de sinal-ruído, deixando as estrelas
+descartadas **visíveis** para quem chama, em vez de silenciosamente ausentes.
+
+### O viés, medido em vez de descrito
+
+A primeira versão do teste do diagrama HR afirmava a sequência principal — mais
+vermelho é mais fraco — e **falhou**, correlação −0,49 em vez de positiva. Não era bug.
+Esta amostra só alcança G = 8,6, então além de cem parsecs só gigantes são brilhantes
+o suficiente para aparecer, e gigantes são vermelhas **e** luminosas.
+
+| Distância | Estrelas | corr(cor, M_G) | Mais fraca visível |
+|---|---|---|---|
+| 0–25 pc | 797 | **+0,875** | M = +11,9 |
+| 25–50 pc | 3.388 | +0,504 | +6,6 |
+| 50–100 pc | 11.407 | +0,090 | +5,1 |
+| 100–200 pc | 23.696 | −0,268 | +3,6 |
+| 200–500 pc | 46.889 | **−0,374** | +2,1 |
+
+**Nenhuma relação física se inverte com a distância.** Um levantamento limitado por
+brilho se inverte, descartando as fracas primeiro — viés de Malmquist, visível numa
+tabela. Os testes agora afirmam a sequência principal *dentro de 25 parsecs*, onde a
+amostra é quase limitada por volume, e afirmam separadamente que a correlação vira.
+
+### Uma matriz de rotação que quase escapou
+
+A transformação ICRS→galáctica é construída a partir de três ângulos, não colada como
+nove números. A primeira tentativa era ortogonal, tinha determinante exatamente 1, e
+punha o polo galáctico norte precisamente em b = +90° — **colocando o centro galáctico
+em l = 90° em vez de 0°**. Um erro de um quarto de volta que passou por todas as
+verificações internas. Só a comparação com a matriz publicada pegou, e agora um teste
+fixa os nove elementos.
+
+### O céu da cena agora é o céu real
+
+O `export_star_data.py` leva 9.000 fontes do Gaia para o navegador, substituindo as
+estrelas procedurais da Fase 2. As constelações são as constelações. Um controle
+**Stars** alterna entre a vista daqui e as posições 3D reais em parsecs — afaste a
+câmera nesse modo e o disco achatado aparece, porque ele está nos dados.
+
+Construir isso revelou uma falha silenciosa que vale conhecer: um atributo `size` por
+vértice num `PointsMaterial` do three.js **não faz nada**. Esse material tem um único
+tamanho escalar para a nuvem inteira, então toda estrela renderizava igual e o céu saía
+chapado. O brilho agora vai na cor, que o blending aditivo resolve de graça.
+
+---
+
 ## Estrutura
 
 ```
@@ -513,7 +592,8 @@ orrery/                  a biblioteca Python
 ├── exoplanets.py        o arquivo da NASA, com os efeitos de seleção documentados
 ├── koi.py               sinais rotulados do Kepler, com as colunas vazadas isoladas
 ├── stability.py         N-corpos em lote que gera os rótulos de estabilidade
-└── models.py            os dois problemas de aprendizado e seus baselines
+├── models.py            os dois problemas de aprendizado e seus baselines
+└── gaia.py              o catálogo de estrelas, e a honestidade da paralaxe
 
 scripts/
 ├── solar_system_report.py   a visão em tabela: onde tudo está, agora
@@ -521,6 +601,9 @@ scripts/
 ├── plot_energy_drift.py     o estudo de integradores da fase 3
 ├── plot_statistics.py       a figura da fase 4
 ├── train_models.py          os modelos e a figura da fase 5
+├── plot_milky_way.py        a figura da fase 6
+├── fetch_gaia.py            baixa a amostra do Gaia
+├── export_star_data.py      empacota o céu real para o navegador
 ├── fetch_exoplanets.py      o único script que usa a rede
 ├── check_generated_data.py  o check de desatualização do CI, comparado numericamente
 └── export_web_data.py       gera a tabela de elementos e o fixture de paridade
@@ -535,13 +618,13 @@ web/src/
 ├── state/               o relógio (ref mutável, não estado do React — veja os comentários)
 └── ui/                  controles de tempo, escala, e leitura ao vivo
 
-tests/                   294 testes Python: leis de conservação, ida-e-volta, valores reais
+tests/                   331 testes Python: leis de conservação, ida-e-volta, valores reais
 data/cache/              snapshot de exoplanetas (gitignored, reproduzível)
 docs/images/             figuras geradas e o screenshot da cena
 .github/workflows/       CI (ambas as linguagens + checagem de desatualização) e deploy no Pages
 ```
 
-**398 testes no total** — 294 em Python, 104 em TypeScript. Tudo roda offline exceto o
+**435 testes no total** — 331 em Python, 104 em TypeScript. Tudo roda offline exceto o
 `fetch_exoplanets.py`.
 
 ---

@@ -5,7 +5,7 @@
  * body positions itself from that clock inside its own `useFrame`.
  */
 
-import { OrbitControls, Stars } from "@react-three/drei";
+import { OrbitControls } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useRef } from "react";
 import { AdditiveBlending, BackSide, type Mesh } from "three";
@@ -16,6 +16,7 @@ import { useSimulation, useSimulationTime } from "../state/simulation";
 import { CameraDirector } from "./CameraDirector";
 import { OrbitLine } from "./OrbitLine";
 import { Planet } from "./Planet";
+import { Starfield } from "./Starfield";
 
 /**
  * Advances the simulation clock, once per frame, for the whole scene.
@@ -88,7 +89,8 @@ function Sun() {
 }
 
 export function Orrery() {
-  const { distanceMode, radiusMode, selectedBodyId, setSelectedBodyId } = useSimulation();
+  const { distanceMode, radiusMode, selectedBodyId, setSelectedBodyId, starMode } =
+    useSimulation();
   // Throttled: only the orbit lines need this, and only to pick an epoch bucket.
   const { jd } = useSimulationTime();
 
@@ -96,10 +98,11 @@ export function Orrery() {
     <>
       <ClockDriver />
 
-      {/* Just enough ambient light to keep night sides from being pure black.
-          Phase 6 replaces this procedural starfield with real Gaia positions. */}
+      {/* Just enough ambient light to keep night sides from being pure black. */}
       <ambientLight intensity={0.08} />
-      <Stars radius={320} depth={90} count={4200} factor={3.4} saturation={0} fade speed={0.4} />
+
+      {/* Real Gaia DR3 sources, replacing the procedural sky of phase 2. */}
+      <Starfield mode={starMode} />
 
       <Sun />
 

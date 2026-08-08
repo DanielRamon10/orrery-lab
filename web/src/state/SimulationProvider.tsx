@@ -10,6 +10,7 @@ import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { julianDateFromDate } from "../lib/ephemeris";
 import type { DistanceMode, RadiusMode } from "../lib/scale";
+import type { StarMode } from "../scene/Starfield";
 import {
   SimulationContext,
   type SimulationClock,
@@ -29,6 +30,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
   const [radiusMode, setRadiusMode] = useState<RadiusMode>("readable");
   const [selectedBodyId, setSelectedBodyId] = useState<string | null>("earth");
   const [viewRequest, setViewRequest] = useState<ViewRequest>({ view: "all", nonce: 0 });
+  const [starMode, setStarMode] = useState<StarMode>("sky");
 
   const requestView = useCallback((view: ViewRequest["view"]) => {
     setViewRequest((previous) => ({ view, nonce: previous.nonce + 1 }));
@@ -58,6 +60,8 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       selectedBodyId,
       viewRequest,
       requestView,
+      starMode,
+      setStarMode,
       setDistanceMode,
       setRadiusMode,
       setSelectedBodyId,
@@ -72,6 +76,7 @@ export function SimulationProvider({ children }: { children: ReactNode }) {
       selectedBodyId,
       viewRequest,
       requestView,
+      starMode,
       seek,
       seekToNow,
       setPlaying,

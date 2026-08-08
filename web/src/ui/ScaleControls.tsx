@@ -14,6 +14,12 @@ const VIEW_PRESETS = [
   { view: "all", label: "All" },
 ] as const;
 
+const STAR_MODES = [
+  { mode: "sky", label: "Sky", hint: "Gaia stars as seen from here" },
+  { mode: "galactic", label: "3D", hint: "their real positions, in parsecs" },
+  { mode: "off", label: "Off", hint: "hide the star field" },
+] as const;
+
 export function ScaleControls() {
   const {
     distanceMode,
@@ -22,6 +28,8 @@ export function ScaleControls() {
     setRadiusMode,
     requestView,
     selectedBodyId,
+    starMode,
+    setStarMode,
   } = useSimulation();
 
   return (
@@ -89,10 +97,28 @@ export function ScaleControls() {
         </button>
       </fieldset>
 
+      <fieldset className="scale-group">
+        <legend>Stars</legend>
+        {STAR_MODES.map((preset) => (
+          <button
+            key={preset.mode}
+            type="button"
+            className={`control control--compact${starMode === preset.mode ? " control--active" : ""}`}
+            onClick={() => setStarMode(preset.mode)}
+            aria-pressed={starMode === preset.mode}
+            title={preset.hint}
+          >
+            {preset.label}
+          </button>
+        ))}
+      </fieldset>
+
       <p className="scale-note">
         {distanceMode === "compressed" ? "Orbits pulled inward by a power law." : "Orbits exactly proportional."}
         {" "}
         {radiusMode === "readable" ? "Bodies enlarged to be visible." : "Bodies at honest size."}
+        {starMode === "sky" && " 9,000 real Gaia stars, where they actually are in the sky."}
+        {starMode === "galactic" && " Gaia stars at their measured 3D distances — zoom out for the disc."}
       </p>
     </div>
   );

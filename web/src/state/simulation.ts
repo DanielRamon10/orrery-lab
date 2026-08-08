@@ -24,6 +24,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 
+import type { StarMode } from "../scene/Starfield";
 import type { DistanceMode, RadiusMode } from "../lib/scale";
 
 /** How often the date read-out refreshes, in milliseconds. */
@@ -69,6 +70,9 @@ export interface SimulationValue {
   readonly selectedBodyId: string | null;
   readonly viewRequest: ViewRequest;
   readonly requestView: (view: ViewRequest["view"]) => void;
+  /** How the Gaia star field is drawn, or whether it is drawn at all. */
+  readonly starMode: StarMode;
+  readonly setStarMode: (mode: StarMode) => void;
   readonly setDistanceMode: (mode: DistanceMode) => void;
   readonly setRadiusMode: (mode: RadiusMode) => void;
   readonly setSelectedBodyId: (id: string | null) => void;
