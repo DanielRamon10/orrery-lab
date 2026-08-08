@@ -52,7 +52,46 @@ table were wrong anywhere, this number would not land there.
 | **4. Statistics layer** | Regression with real error bars, Titius–Bode as a parameter-free prediction, resonance search, a Monte Carlo hypothesis test, and 5,981 exoplanets for context | ✅ **done** |
 | **5. Machine learning** | Stability predictor trained on 2,500 systems this project simulated itself, benchmarked against the analytic Hill criterion; plus a worked target-leakage failure on real Kepler data | ✅ **done** |
 | **6. The Milky Way** | 120,000 Gaia DR3 stars: the HR diagram, the galactic disc in 3D, Malmquist bias measured — and the real sky inside the browser scene | ✅ **done** |
-| 7. Portfolio polish | Notebooks, CI, live demo, documentation | planned |
+| **7. Portfolio polish** | Restructured docs, a catalogue of the project's own mistakes, fresh-clone verification | ✅ **done** |
+
+---
+
+## What this project found
+
+Each links to the section that shows the working.
+
+| | |
+|---|---|
+| **Kepler's third law to machine precision.** Fitting `log a` against `log P` returns a slope of 1.500000000000 — error 2.2×10⁻¹⁶. The exponent is never fed in. | [↓](#why-this-repository-is-not-another-matplotlib-notebook) |
+| **The symplectic crossover, measured.** Over 1,500 orbits at a fixed step, leapfrog's peak energy error is *identical to every digit* to its value at 60 orbits, while RK4's grows 25×. RK4 starts 9× better and ends 2.8× worse. | [↓](#phase-3--n-body-and-why-the-integrator-matters-more-than-its-accuracy-order) |
+| **Telling real physics from numerical error.** Neptune's orbital elements wander 1.2% per century and Mercury's 0.5%. Halve the step: Neptune's is unchanged (real perturbation), Mercury's drops 15× (discretisation). The artefact was the *larger* one. | [↓](#a-diagnostic-worth-stealing) |
+| **Titius–Bode, as a parameter-free prediction.** Within 5% for every slot out to Uranus — including the asteroid belt, whose slot was empty when the rule was written — then 29% wrong at Neptune. Pluto sits 1.7% from the slot Neptune missed. | [↓](#titiusbode-a-striking-pattern-with-no-known-cause) |
+| **A negative result, reported as one.** Solar-system period ratios are *not* unusually close to simple fractions: p = 0.79 against a matched null, and slightly farther from commensurable than chance. | [↓](#and-they-are-not-statistically-remarkable) |
+| **A model that earns its place.** Predicting orbital stability from 2,500 systems the project simulated itself: 0.857 accuracy against 0.816 for the *best possible* single threshold on the same feature, and 0.796 for the textbook analytic criterion. | [↓](#did-the-model-earn-its-place) |
+| **Target leakage, demonstrated.** The same Kepler classifier scores 0.932 on physical features and 0.996 once given the vetting flags — which encode the answer. The second number is the worthless one. | [↓](#the-leakage-trap-on-real-kepler-data) |
+| **Malmquist bias in one table.** The colour–brightness correlation of 120,000 Gaia stars *reverses sign* with distance, +0.88 nearby to −0.37 far away. No physical relationship does that; a brightness-limited survey does. | [↓](#the-bias-measured-rather-than-described) |
+
+---
+
+## Where this project was wrong
+
+Every one of these was a real mistake, caught by something in the repository rather
+than by inspection. They are listed because a project that only shows its successes is
+showing half its engineering.
+
+| The mistake | How it surfaced |
+|---|---|
+| Implemented Titius–Bode as a fitted geometric progression. It is not — the real rule has an additive term. My version scored R² = 0.993 while missing Mars by 20%, and *improved* when Neptune was included, inverting the historical story. | Per-body errors, after the aggregate statistic looked fine |
+| Searched for resonances with `Fraction.limit_denominator`, which bounds only the denominator. With a free numerator, "Pluto:Mars = 1319:10" matches to five decimals and implies a 1309th-order resonance. | Reading the output instead of trusting it |
+| Claimed leapfrog beats RK4. False at the span I was testing — the symplectic advantage is asymptotic, not universal. | A test I wrote to prove it, which failed |
+| Claimed every integrator conserves angular momentum. Euler drifts 8%. | Parametrising the test over all four |
+| Measured orbital drift by comparing a short arc's mean distance to a full orbit's. That measures orbital phase, not drift. | A 1.6% "failure" that was my metric, not the physics |
+| Documented the stability integration error as ~10⁻⁶. Measured: 4×10⁻⁴, exactly `(dt/P)²`. | Measuring it instead of asserting it |
+| Asserted the tuned threshold always beats the analytic one on held-out data. It does not, on small samples. | A run where it lost by 0.008 |
+| Drew ROC curves from thresholded 0/1 labels rather than probabilities, collapsing both curves to three points. | Looking at the rendered figure |
+| Built the ICRS→galactic rotation with a quarter-turn error. Orthogonal, determinant exactly 1, pole precisely at b = +90° — and the galactic centre at l = 90° instead of 0°. | Comparison against the published matrix; every internal check passed |
+| Set a per-vertex `size` attribute on a three.js `PointsMaterial`, which silently ignores it. Every star rendered identically. | A screenshot, not the build |
+| Wrote a CI check that regenerated data and compared bytes. IEEE 754 makes no cross-platform bit-identity promise; it failed on the first clean run over one unit in the last place. | The first CI run, on the first push |
 
 ---
 

@@ -53,7 +53,46 @@ tabela de elementos estivessem errados em qualquer ponto, esse número não cair
 | **4. Camada estatística** | Regressão com barras de erro reais, Titius–Bode como predição sem parâmetros, busca de ressonâncias, teste de hipótese por Monte Carlo, e 5.981 exoplanetas para contexto | ✅ **pronta** |
 | **5. Machine learning** | Preditor de estabilidade treinado em 2.500 sistemas que o próprio projeto simulou, comparado contra o critério analítico de Hill; mais uma falha de vazamento de alvo demonstrada em dados reais do Kepler | ✅ **pronta** |
 | **6. Via Láctea** | 120.000 estrelas do Gaia DR3: diagrama HR, o disco galáctico em 3D, viés de Malmquist medido — e o céu real dentro da cena no navegador | ✅ **pronta** |
-| 7. Polimento de portfólio | Notebooks, CI, demo ao vivo, documentação | planejada |
+| **7. Polimento de portfólio** | Documentação reestruturada, catálogo dos próprios erros do projeto, verificação em clone limpo | ✅ **pronta** |
+
+---
+
+## O que este projeto encontrou
+
+Cada item liga para a seção que mostra a conta.
+
+| | |
+|---|---|
+| **Terceira lei de Kepler com precisão de máquina.** Ajustar `log a` contra `log P` devolve inclinação 1,500000000000 — erro 2,2×10⁻¹⁶. O expoente nunca é informado. | [↓](#por-que-este-reposit%C3%B3rio-n%C3%A3o-%C3%A9-mais-um-notebook-de-matplotlib) |
+| **O crossover simplético, medido.** Em 1.500 órbitas com passo fixo, o pico de erro de energia do leapfrog é *idêntico até o último dígito* ao valor em 60 órbitas, enquanto o do RK4 cresce 25×. O RK4 começa 9× melhor e termina 2,8× pior. | [↓](#fase-3--n-corpos-e-por-que-o-integrador-importa-mais-que-sua-ordem-de-precis%C3%A3o) |
+| **Distinguir física real de erro numérico.** Os elementos de Netuno vagam 1,2% por século e os de Mercúrio 0,5%. Divida o passo pela metade: o de Netuno não muda (perturbação real), o de Mercúrio cai 15× (discretização). O artefato era o *maior* dos dois. | [↓](#um-diagn%C3%B3stico-que-vale-roubar) |
+| **Titius–Bode como predição sem parâmetros.** Dentro de 5% em todos os slots até Urano — incluindo o cinturão de asteroides, cujo slot estava vazio quando a regra foi escrita — e então 29% errado em Netuno. Plutão fica a 1,7% do slot que Netuno não ocupou. | [↓](#titiusbode-um-padr%C3%A3o-marcante-sem-causa-conhecida) |
+| **Um resultado negativo, reportado como tal.** As razões de período do Sistema Solar **não** são especialmente próximas de frações simples: p = 0,79 contra uma nula pareada, e ligeiramente mais longe de comensurável que o azar. | [↓](#e-elas-n%C3%A3o-s%C3%A3o-estatisticamente-not%C3%A1veis) |
+| **Um modelo que ganha o lugar dele.** Prever estabilidade orbital a partir de 2.500 sistemas que o projeto simulou: 0,857 de acurácia contra 0,816 do *melhor limiar possível* na mesma feature, e 0,796 do critério analítico de livro-texto. | [↓](#o-modelo-ganhou-o-lugar-dele) |
+| **Vazamento de alvo, demonstrado.** O mesmo classificador do Kepler marca 0,932 com features físicas e 0,996 quando recebe as flags de vetting — que codificam a resposta. O segundo número é o inútil. | [↓](#a-armadilha-de-vazamento-em-dados-reais-do-kepler) |
+| **Viés de Malmquist numa tabela.** A correlação cor–brilho de 120.000 estrelas do Gaia **inverte de sinal** com a distância, de +0,88 perto para −0,37 longe. Nenhuma relação física faz isso; um levantamento limitado por brilho faz. | [↓](#o-vi%C3%A9s-medido-em-vez-de-descrito) |
+
+---
+
+## Onde este projeto errou
+
+Cada um destes foi um erro real, pego por algo dentro do repositório e não por inspeção.
+Estão listados porque um projeto que mostra só os acertos está mostrando metade da
+engenharia.
+
+| O erro | Como apareceu |
+|---|---|
+| Implementei Titius–Bode como progressão geométrica ajustada. Não é — a regra real tem termo aditivo. Minha versão marcava R² = 0,993 errando Marte em 20%, e *melhorava* ao incluir Netuno, invertendo a história real. | Os erros por planeta, depois que a estatística agregada pareceu boa |
+| Busquei ressonâncias com `Fraction.limit_denominator`, que limita só o denominador. Com numerador livre, "Plutão:Marte = 1319:10" casa com cinco decimais e implica ressonância de ordem 1309. | Ler a saída em vez de confiar nela |
+| Afirmei que leapfrog vence RK4. Falso na escala que eu testava — a vantagem simplética é assintótica, não universal. | Um teste que escrevi para provar, e que falhou |
+| Afirmei que todo integrador conserva momento angular. O Euler deriva 8%. | Parametrizar o teste sobre os quatro |
+| Medi deriva orbital comparando a média de um arco curto com a de uma órbita inteira. Isso mede fase orbital, não deriva. | Uma "falha" de 1,6% que era a minha métrica, não a física |
+| Documentei o erro de integração da estabilidade como ~10⁻⁶. Medido: 4×10⁻⁴, exatamente `(dt/P)²`. | Medir em vez de afirmar |
+| Afirmei que o limiar ajustado sempre bate o analítico em dados de teste. Não bate, em amostras pequenas. | Uma rodada onde perdeu por 0,008 |
+| Desenhei curvas ROC a partir de rótulos 0/1 em vez de probabilidades, achatando as duas em três pontos. | Olhar a figura renderizada |
+| Construí a rotação ICRS→galáctica com erro de um quarto de volta. Ortogonal, determinante exatamente 1, polo precisamente em b = +90° — e o centro galáctico em l = 90° em vez de 0°. | Comparação com a matriz publicada; toda verificação interna passou |
+| Defini um atributo `size` por vértice num `PointsMaterial` do three.js, que o ignora silenciosamente. Toda estrela renderizou igual. | Um screenshot, não o build |
+| Escrevi um check de CI que regenerava dados e comparava bytes. A IEEE 754 não promete identidade bit a bit entre plataformas; falhou na primeira rodada limpa por um bit. | A primeira execução do CI, no primeiro push |
 
 ---
 
