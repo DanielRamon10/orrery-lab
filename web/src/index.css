@@ -1,0 +1,411 @@
+/**
+ * UI chrome for the orrery.
+ *
+ * Dark only, and deliberately so: the subject is a night sky, and a light theme
+ * would mean rendering space as white. The chrome tokens below are the dark-mode
+ * values from the project's reference palette, so the panels sit in the same
+ * system as the figures generated on the Python side.
+ */
+
+:root {
+  --surface-glass: rgba(20, 20, 19, 0.82);
+  --space: #05050a;
+  --ink: #ffffff;
+  --ink-secondary: #c3c2b7;
+  --ink-muted: #898781;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --accent: #3987e5;
+
+  --radius: 10px;
+  --gap: 12px;
+
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--space);
+  color: var(--ink);
+  overflow: hidden;
+}
+
+.app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.app canvas {
+  display: block;
+  /* A faint radial lift keeps the frame from reading as a dead black rectangle. */
+  background: radial-gradient(ellipse at 50% 40%, #0b0b18 0%, var(--space) 62%);
+}
+
+/* --- Panels ------------------------------------------------------------- */
+
+.panel {
+  background: var(--surface-glass);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+}
+
+/**
+ * Panels must sit above the in-scene labels.
+ *
+ * drei's <Html> renders real DOM into a wrapper layered over the canvas, so a
+ * planet label near the right edge would otherwise paint straight through the
+ * read-out panel. Giving the docks a high z-index puts every panel above that
+ * wrapper; the labels keep their own low layer just above the canvas.
+ */
+.dock {
+  position: absolute;
+  display: flex;
+  gap: var(--gap);
+  z-index: 20;
+}
+
+.dock--right {
+  top: 16px;
+  right: 16px;
+  flex-direction: column;
+  width: 288px;
+  max-height: calc(100% - 160px);
+  overflow-y: auto;
+}
+
+.dock--bottom {
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  width: min(620px, calc(100% - 32px));
+}
+
+.panel--time {
+  width: 100%;
+}
+
+/* --- Masthead ----------------------------------------------------------- */
+
+.masthead {
+  position: absolute;
+  top: 18px;
+  left: 20px;
+  z-index: 20;
+  max-width: 340px;
+  pointer-events: none;
+}
+
+.masthead h1 {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  /* Orbit lines pass behind this text; the shadow keeps it readable without
+     putting an opaque plate over the scene. */
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.95), 0 0 3px rgba(0, 0, 0, 0.9);
+}
+
+.masthead p {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--ink-secondary);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.95), 0 0 3px rgba(0, 0, 0, 0.9);
+}
+
+.credit {
+  position: absolute;
+  bottom: 18px;
+  left: 20px;
+  z-index: 20;
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.95);
+  pointer-events: none;
+}
+
+/* --- Controls ----------------------------------------------------------- */
+
+.control {
+  appearance: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink-secondary);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 11px;
+  font: inherit;
+  font-size: 0.76rem;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.control:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--ink);
+}
+
+.control:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.control--compact {
+  padding: 4px 8px;
+  font-size: 0.71rem;
+}
+
+.control--active {
+  background: rgba(57, 135, 229, 0.26);
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.control--primary {
+  min-width: 42px;
+  font-size: 0.8rem;
+  color: var(--ink);
+  border-color: var(--border-strong);
+}
+
+/* --- Time panel --------------------------------------------------------- */
+
+.time-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.time-readout {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.time-readout__date {
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.time-readout__jd {
+  font-size: 0.68rem;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.time-readout__warn {
+  color: #e8a33d;
+  font-style: normal;
+}
+
+.scrub {
+  appearance: none;
+  width: 100%;
+  height: 3px;
+  margin: 12px 0 10px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  cursor: pointer;
+}
+
+.scrub::-webkit-slider-thumb {
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--ink);
+  border: none;
+}
+
+.scrub::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--ink);
+  border: none;
+}
+
+.scrub:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.speed-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: center;
+}
+
+/* --- Scale panel -------------------------------------------------------- */
+
+.panel--scale {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.scale-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  margin: 0;
+  padding: 0;
+}
+
+.scale-group legend {
+  float: left;
+  width: 74px;
+  padding: 0;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+}
+
+.scale-note {
+  margin: 2px 0 0;
+  font-size: 0.68rem;
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+
+/* --- Readout ------------------------------------------------------------ */
+
+.readout-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.readout-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.readout-swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  flex: none;
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+.tag {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 5px;
+}
+
+.readout-grid {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.readout-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 0.74rem;
+}
+
+.readout-row dt {
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.readout-row dd {
+  margin: 0;
+  text-align: right;
+  color: var(--ink-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.readout-note {
+  margin: 11px 0 0;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  font-size: 0.68rem;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+
+.readout-note strong {
+  color: var(--ink-secondary);
+}
+
+.panel--readout-empty {
+  color: var(--ink-muted);
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.74rem;
+}
+
+/* --- In-scene labels ---------------------------------------------------- */
+
+.body-label {
+  font-size: 0.68rem;
+  font-weight: 500;
+  color: var(--ink-secondary);
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+  white-space: nowrap;
+}
+
+.body-label--selected {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* --- Narrow screens ----------------------------------------------------- */
+
+@media (max-width: 760px) {
+  .dock--right {
+    top: auto;
+    bottom: 172px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    flex-direction: row;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .dock--right .panel {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .masthead p,
+  .credit {
+    display: none;
+  }
+}

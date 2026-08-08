@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orrery-lab"
+version = "0.1.0"
+description = "Interactive 3D solar system and galactic analytics lab: celestial mechanics, statistics and machine learning on real astronomical data."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Daniel Ramon" }]
+keywords = ["astronomy", "celestial-mechanics", "orbital-mechanics", "gaia", "exoplanets", "machine-learning"]
+
+dependencies = [
+    "numpy>=1.26",
+    # Needed from phase 4 on: the statistical tests report p-values, which means
+    # real distribution functions rather than a hardcoded table of critical values.
+    "scipy>=1.11",
+]
+
+[project.optional-dependencies]
+# Plots and notebooks used to validate the physics.
+viz = ["matplotlib>=3.8"]
+# Phase 5+: machine learning and tabular catalogue wrangling.
+science = [
+    "pandas>=2.1",
+    "scikit-learn>=1.4",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+]
+
+[tool.setuptools.packages.find]
+include = ["orrery*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "NPY"]

@@ -1,0 +1,14 @@
+# Normalise line endings to LF inside the repository.
+#
+# This matters beyond tidiness: CI regenerates web/src/data on Linux and fails the
+# build if the result differs from what was committed. Without normalisation, a file
+# committed from Windows with CRLF would differ from the LF the generator writes on
+# the runner, and that check would fail for no real reason.
+* text=auto eol=lf
+
+# Binary assets: never touch.
+*.png binary
+*.jpg binary
+*.ico binary
+*.pkl binary
+*.pt binary

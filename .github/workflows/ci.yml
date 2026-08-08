@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  python:
+    name: Python — lint & tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[viz,dev]"
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Tests
+        run: pytest
+
+  generated-data-is-current:
+    name: Generated web data matches the Python source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e "."
+
+      # web/src/data/*.generated.* are committed so the site builds without Python.
+      # That only stays safe if they are never edited by hand and never left stale:
+      # regenerate them here and fail if the result differs from what was committed.
+      - name: Regenerate
+        run: python scripts/export_web_data.py
+
+      - name: Check for drift
+        run: |
+          if ! git diff --exit-code -- web/src/data; then
+            echo "::error::web/src/data is stale. Run 'python scripts/export_web_data.py' and commit the result."
+            exit 1
+          fi
+
+  web:
+    name: Web — typecheck, lint & tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests — includes parity against the Python reference
+        run: npm run test
+
+      - name: Build
+        run: npm run build

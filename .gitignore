@@ -1,0 +1,34 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# --- Node / web ---
+node_modules/
+web/dist/
+web/.vite/
+*.log
+
+# --- Data & artifacts ---
+# Raw downloads are reproducible via scripts/, so they stay out of git.
+data/raw/
+data/cache/
+models/*.pkl
+models/*.pt
+
+# --- OS / editor / tooling ---
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.claude/settings.local.json
