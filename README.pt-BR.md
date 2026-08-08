@@ -2,6 +2,8 @@
 
 **Uma maquete 3D interativa do Sistema Solar construída sobre mecânica celeste real — e um laboratório para fazer estatística e machine learning sobre o céu.**
 
+### ▶ [Abrir a maquete ao vivo](https://danielramon10.github.io/orrery-lab/)
+
 *English: [README.md](README.md)*
 
 Um *orrery* é aquela maquete mecânica do Sistema Solar, com braços de latão e

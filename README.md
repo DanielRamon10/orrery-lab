@@ -2,6 +2,8 @@
 
 **An interactive 3D model of the solar system, built on real celestial mechanics — and a laboratory for doing statistics and machine learning on the sky.**
 
+### ▶ [Open the live orrery](https://danielramon10.github.io/orrery-lab/)
+
 *Português: [README.pt-BR.md](README.pt-BR.md)*
 
 An *orrery* is a mechanical model of the solar system, the kind with brass arms and
