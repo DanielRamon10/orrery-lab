@@ -96,6 +96,18 @@ engenharia.
 
 ---
 
+## Notebooks
+
+Três notebooks contam as partes da história que os scripts não contam. Commitados **com
+as saídas**, então o GitHub renderiza sem precisar rodar nada.
+
+| | |
+|---|---|
+| [**1 · Onde está Marte hoje à noite?**](notebooks/01-solving-keplers-equation.ipynb) | De uma data a uma posição 3D, derivando cada passo. Newton–Raphson convergindo em três iterações mesmo com e = 0,95, e a anomalia verdadeira 35° à frente do movimento uniforme — a segunda lei de Kepler visível. |
+| [**2 · Por que o integrador importa mais que sua precisão**](notebooks/02-why-integrators-matter.ipynb) | O crossover simplético localizado em **544 órbitas**, previsto pela taxa de crescimento do RK4 e depois confirmado. Ordens de convergência recuperadas dos dados; leapfrog fechando um ciclo ida-e-volta a 10⁻¹⁴ UA onde o RK4 fica em 10⁻⁷. |
+| [**3 · O que os dados não dizem**](notebooks/03-what-the-data-does-not-say.ipynb) | Quatro formas de estar confiantemente errado, cada uma um erro realmente cometido aqui e reproduzido em vez de descrito. |
+
+---
 ## Como começar
 
 ```bash

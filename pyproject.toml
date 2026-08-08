@@ -31,6 +31,13 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.5",
 ]
+# Only needed to re-run the explanatory notebooks; they are committed with outputs,
+# so reading them requires nothing.
+notebooks = [
+    "jupyterlab>=4.0",
+    "nbconvert>=7.0",
+    "ipykernel>=6.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["orrery*"]

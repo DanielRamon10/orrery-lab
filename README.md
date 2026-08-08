@@ -95,6 +95,18 @@ showing half its engineering.
 
 ---
 
+## Notebooks
+
+Three notebooks tell the parts of the story the scripts cannot. Committed **with their
+outputs**, so GitHub renders them without running anything.
+
+| | |
+|---|---|
+| [**1 · Where is Mars tonight?**](notebooks/01-solving-keplers-equation.ipynb) | From a date to a 3D position, deriving each step. Newton–Raphson converging in three iterations even at e = 0.95, and the true anomaly running 35° ahead of uniform motion — Kepler's second law made visible. |
+| [**2 · Why the integrator matters more than its accuracy**](notebooks/02-why-integrators-matter.ipynb) | The symplectic crossover located at **544 orbits**, predicted from RK4's growth rate and then confirmed. Convergence orders recovered from data; leapfrog closing a forward-and-back loop to 10⁻¹⁴ AU where RK4 manages 10⁻⁷. |
+| [**3 · What the data does not say**](notebooks/03-what-the-data-does-not-say.ipynb) | Four ways to be confidently wrong, each one a mistake actually made here and reproduced rather than described. |
+
+---
 ## Quick start
 
 ```bash
