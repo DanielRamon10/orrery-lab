@@ -42,17 +42,15 @@ jobs:
         run: pip install -e "."
 
       # web/src/data/*.generated.* are committed so the site builds without Python.
-      # That only stays safe if they are never edited by hand and never left stale:
-      # regenerate them here and fail if the result differs from what was committed.
-      - name: Regenerate
-        run: python scripts/export_web_data.py
-
-      - name: Check for drift
-        run: |
-          if ! git diff --exit-code -- web/src/data; then
-            echo "::error::web/src/data is stale. Run 'python scripts/export_web_data.py' and commit the result."
-            exit 1
-          fi
+      # That only stays safe if they are never edited by hand and never left stale.
+      #
+      # Checked numerically rather than with `git diff`. A byte comparison was the
+      # first attempt and it failed on a clean checkout: the fixture stores
+      # full-precision floats, and numpy's last bit differs between the runner and
+      # a developer machine. IEEE 754 makes no cross-platform bit-identity promise,
+      # so the byte check was asserting something untrue. See the script's docstring.
+      - name: Check the generated data is current
+        run: python scripts/check_generated_data.py
 
   web:
     name: Web — typecheck, lint & tests
