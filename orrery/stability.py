@@ -157,9 +157,46 @@ class SystemSample:
     #: Argument of pericentre of the outer planet, radians. The inner planet's is
     #: fixed at zero, since only the relative orientation matters.
     pericentre_outer: np.ndarray
+    #: Inclination of each orbit to the reference plane, radians. ``None`` for a
+    #: coplanar draw, which is the default and is what the Phase 5 dataset is built
+    #: from. Kept as ``None`` rather than an array of zeros so that "this sample has
+    #: no inclination in it" is a fact about the object, not a value to be compared
+    #: against a tolerance.
+    inclinations: np.ndarray | None = None
+    #: Longitude of the ascending node of each orbit, radians. Meaningless when the
+    #: inclination is zero, so ``None`` travels with it.
+    nodes: np.ndarray | None = None
 
     def __len__(self) -> int:
         return len(self.gm_inner)
+
+    @property
+    def is_coplanar(self) -> bool:
+        return self.inclinations is None
+
+    def orbit_normals(self) -> np.ndarray:
+        """Unit normal of each orbit, shape ``(S, 2, 3)``.
+
+        The normal is what carries the orientation of a plane; the angle between two
+        of them is the mutual inclination, which is the quantity with dynamical
+        meaning. Individual inclinations are not: two orbits each tilted 30 degrees
+        can be coplanar or 60 degrees apart depending on their nodes.
+        """
+        if self.inclinations is None:
+            normals = np.zeros((len(self), 2, 3))
+            normals[..., 2] = 1.0
+            return normals
+
+        sin_i, cos_i = np.sin(self.inclinations), np.cos(self.inclinations)
+        return np.stack(
+            [sin_i * np.sin(self.nodes), -sin_i * np.cos(self.nodes), cos_i], axis=-1
+        )
+
+    def mutual_inclination(self) -> np.ndarray:
+        """Angle between the two orbit normals, radians, shape ``(S,)``."""
+        normals = self.orbit_normals()
+        dot = np.clip(np.sum(normals[:, 0, :] * normals[:, 1, :], axis=-1), -1.0, 1.0)
+        return np.arccos(dot)
 
 
 @dataclass(frozen=True)
@@ -192,6 +229,16 @@ class StabilityDataset:
     @property
     def stable_fraction(self) -> float:
         return float(np.mean(self.labels))
+
+    @property
+    def mutual_inclination_deg(self) -> np.ndarray:
+        """``(S,)`` angle between the two orbit planes, degrees. Zero if coplanar.
+
+        Deliberately *not* a model feature. The whole point of measuring transfer is
+        to ask what a model trained without this quantity does when it changes, so
+        handing it to the model would answer a different question.
+        """
+        return np.degrees(self.sample.mutual_inclination())
 
 
 def mutual_hill_radius(
@@ -234,6 +281,7 @@ def sample_two_planet_systems(
     hill_separation_range: tuple[float, float] = (1.5, 12.0),
     log_mass_range: tuple[float, float] = (-6.0, -3.0),
     max_eccentricity: float = 0.15,
+    max_inclination_deg: float = 0.0,
     gm_star: float = GM_SUN,
 ) -> SystemSample:
     """Draw random two-planet systems, parameterised by Hill separation.
@@ -251,6 +299,11 @@ def sample_two_planet_systems(
         log_mass_range: ``log10`` of planet mass relative to the star. The default
             spans roughly Earth-mass to a few Jupiters.
         max_eccentricity: Eccentricities are drawn uniformly in ``[0, this]``.
+        max_inclination_deg: Each orbit is tilted by an angle drawn uniformly in
+            ``[0, this]`` with a random node. Zero, the default, means coplanar and
+            skips the draws altogether, so the Phase 5 dataset reproduces exactly
+            rather than approximately --- see :func:`sample_planet_systems` for why
+            drawing and discarding would not be equivalent.
         gm_star: Gravitational parameter of the central star.
 
     Returns:
@@ -258,6 +311,10 @@ def sample_two_planet_systems(
     """
     if count < 1:
         raise ValueError(f"count must be positive; got {count}")
+    if not 0.0 <= max_inclination_deg <= 180.0:
+        raise ValueError(
+            f"max_inclination_deg must be in [0, 180]; got {max_inclination_deg}"
+        )
 
     generator = np.random.default_rng(seed)
 
@@ -274,16 +331,33 @@ def sample_two_planet_systems(
     half = 0.5 * target_separation * mass_factor
     outer_axis = inner_axis * (1.0 + half) / (1.0 - half)
 
+    eccentricity_inner = generator.uniform(0.0, max_eccentricity, size=count)
+    eccentricity_outer = generator.uniform(0.0, max_eccentricity, size=count)
+    phase_inner = generator.uniform(0.0, 2.0 * np.pi, size=count)
+    phase_outer = generator.uniform(0.0, 2.0 * np.pi, size=count)
+    pericentre_outer = generator.uniform(0.0, 2.0 * np.pi, size=count)
+
+    # Drawn last, and only when asked for, so that every draw above is untouched by
+    # the existence of this parameter and the coplanar dataset stays bit-identical.
+    inclinations = nodes = None
+    if max_inclination_deg > 0.0:
+        inclinations = np.radians(
+            generator.uniform(0.0, max_inclination_deg, size=(count, 2))
+        )
+        nodes = generator.uniform(0.0, 2.0 * np.pi, size=(count, 2))
+
     return SystemSample(
         gm_inner=gm_inner,
         gm_outer=gm_outer,
         semi_major_axis_inner=inner_axis,
         semi_major_axis_outer=outer_axis,
-        eccentricity_inner=generator.uniform(0.0, max_eccentricity, size=count),
-        eccentricity_outer=generator.uniform(0.0, max_eccentricity, size=count),
-        phase_inner=generator.uniform(0.0, 2.0 * np.pi, size=count),
-        phase_outer=generator.uniform(0.0, 2.0 * np.pi, size=count),
-        pericentre_outer=generator.uniform(0.0, 2.0 * np.pi, size=count),
+        eccentricity_inner=eccentricity_inner,
+        eccentricity_outer=eccentricity_outer,
+        phase_inner=phase_inner,
+        phase_outer=phase_outer,
+        pericentre_outer=pericentre_outer,
+        inclinations=inclinations,
+        nodes=nodes,
     )
 
 
@@ -294,7 +368,14 @@ def _initial_state(
 
     Returns arrays of shape ``(S, 3, 3)``, ``(S, 3, 3)`` and ``(S, 3)``, with body 0
     the star. Planets are placed on their ellipses at the sampled true anomaly, using
-    the same perifocal construction as :mod:`orrery.ephemeris` restricted to a plane.
+    the same perifocal construction as :mod:`orrery.ephemeris`.
+
+    The full ``Rz(node) Rx(inclination) Rz(pericentre)`` rotation is applied
+    unconditionally. With zero inclination and node it collapses to the plane rotation
+    this function used to do, and does so *exactly*: ``sin(0.0)`` is 0.0 and
+    ``cos(0.0)`` is 1.0 with no rounding, so every inclined term multiplies out to a
+    hard zero rather than to something small. That is what lets the coplanar dataset
+    stay bit-identical while the general case is available.
     """
     count = len(sample)
     positions = np.zeros((count, 3, 3))
@@ -302,6 +383,9 @@ def _initial_state(
     gms = np.stack(
         [np.full(count, gm_star), sample.gm_inner, sample.gm_outer], axis=1
     )
+
+    zero = np.zeros(count)
+    inclinations, nodes = sample.inclinations, sample.nodes
 
     for index, (axis, eccentricity, phase, pericentre) in enumerate(
         (
@@ -326,11 +410,28 @@ def _initial_state(
         vx_perifocal = -speed_scale * sin_phase
         vy_perifocal = speed_scale * (eccentricity + cos_phase)
 
+        inclination = zero if inclinations is None else inclinations[:, index - 1]
+        node = zero if nodes is None else nodes[:, index - 1]
+
         cos_peri, sin_peri = np.cos(pericentre), np.sin(pericentre)
-        positions[:, index, 0] = x_perifocal * cos_peri - y_perifocal * sin_peri
-        positions[:, index, 1] = x_perifocal * sin_peri + y_perifocal * cos_peri
-        velocities[:, index, 0] = vx_perifocal * cos_peri - vy_perifocal * sin_peri
-        velocities[:, index, 1] = vx_perifocal * sin_peri + vy_perifocal * cos_peri
+        cos_inc, sin_inc = np.cos(inclination), np.sin(inclination)
+        cos_node, sin_node = np.cos(node), np.sin(node)
+
+        # Columns of Rz(node) Rx(inclination) Rz(pericentre), the first two of which
+        # are all a perifocal vector with no z component needs.
+        m00 = cos_node * cos_peri - sin_node * sin_peri * cos_inc
+        m01 = -cos_node * sin_peri - sin_node * cos_peri * cos_inc
+        m10 = sin_node * cos_peri + cos_node * sin_peri * cos_inc
+        m11 = -sin_node * sin_peri + cos_node * cos_peri * cos_inc
+        m20 = sin_peri * sin_inc
+        m21 = cos_peri * sin_inc
+
+        positions[:, index, 0] = m00 * x_perifocal + m01 * y_perifocal
+        positions[:, index, 1] = m10 * x_perifocal + m11 * y_perifocal
+        positions[:, index, 2] = m20 * x_perifocal + m21 * y_perifocal
+        velocities[:, index, 0] = m00 * vx_perifocal + m01 * vy_perifocal
+        velocities[:, index, 1] = m10 * vx_perifocal + m11 * vy_perifocal
+        velocities[:, index, 2] = m20 * vx_perifocal + m21 * vy_perifocal
 
     # Shift to the barycentre so the systems do not drift while being integrated.
     total_gm = gms.sum(axis=1, keepdims=True)
@@ -413,6 +514,7 @@ def build_stability_dataset(
     axis_change_threshold: float = 0.20,
     close_encounter_hill_radii: float = 1.0,
     seed: int = 20260808,
+    max_inclination_deg: float = 0.0,
     gm_star: float = GM_SUN,
     progress: bool = False,
 ) -> StabilityDataset:
@@ -439,13 +541,19 @@ def build_stability_dataset(
         axis_change_threshold: Fractional change counting as disruption.
         close_encounter_hill_radii: Approach distance counting as disruption.
         seed: Passed to :func:`sample_two_planet_systems`.
+        max_inclination_deg: Tilt between the orbital planes. Zero, the default, is
+            the coplanar dataset the models are trained on; a non-zero value produces
+            a *shifted* dataset with the same features and a different truth, which
+            is what :func:`orrery.models.evaluate_inclination_transfer` uses.
         gm_star: Central mass.
         progress: Print progress, since a full run takes a minute or two.
 
     Returns:
         A :class:`StabilityDataset` ready for :mod:`orrery.models`.
     """
-    sample = sample_two_planet_systems(count, seed=seed, gm_star=gm_star)
+    sample = sample_two_planet_systems(
+        count, seed=seed, max_inclination_deg=max_inclination_deg, gm_star=gm_star
+    )
     positions, velocities, gms = _initial_state(sample, gm_star)
 
     inner_period = 2.0 * np.pi * np.sqrt(INNER_SEMI_MAJOR_AXIS_AU**3 / gm_star)

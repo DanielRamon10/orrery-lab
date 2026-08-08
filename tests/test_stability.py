@@ -588,3 +588,129 @@ class TestInclinationStabilises:
         assert len(centres) >= 2
         assert np.all((rates >= 0) & (rates <= 1))
         assert counts.sum() <= len(inclined_three_planet)
+
+
+class TestTwoPlanetInclination:
+    """The two-planet path grew inclination without disturbing the coplanar dataset.
+
+    That dataset is what phase 5's published numbers were measured on, so the tests
+    here are mostly about what did *not* change.
+    """
+
+    def test_the_default_draw_is_flagged_coplanar(self):
+        sample = sample_two_planet_systems(64, seed=3)
+        assert sample.is_coplanar
+        assert sample.inclinations is None
+        assert sample.nodes is None
+
+    def test_coplanar_orbits_are_exactly_flat(self):
+        """Exactly, not approximately.
+
+        The general rotation is applied unconditionally, so this asserts that the
+        inclined terms multiply out to hard zeros rather than to something merely
+        small. A tolerance here would hide a regression that shifts the labels.
+        """
+        sample = sample_two_planet_systems(200, seed=11)
+        positions, velocities, _ = _initial_state(sample, GM_SUN)
+
+        assert np.max(np.abs(positions[..., 2])) == 0.0
+        assert np.max(np.abs(velocities[..., 2])) == 0.0
+        assert np.max(sample.mutual_inclination()) == 0.0
+
+    def test_asking_for_inclination_does_not_move_any_other_draw(self):
+        """The tilt is drawn last, so the systems themselves are unchanged.
+
+        This is what makes the transfer comparison controlled: the inclined set is
+        the same systems with their planes rotated, not a fresh sample.
+        """
+        flat = sample_two_planet_systems(300, seed=5)
+        tilted = sample_two_planet_systems(300, seed=5, max_inclination_deg=25.0)
+
+        for name in (
+            "gm_inner",
+            "gm_outer",
+            "semi_major_axis_inner",
+            "semi_major_axis_outer",
+            "eccentricity_inner",
+            "eccentricity_outer",
+            "phase_inner",
+            "phase_outer",
+            "pericentre_outer",
+        ):
+            assert np.array_equal(getattr(flat, name), getattr(tilted, name)), name
+
+    def test_inclined_orbits_leave_the_reference_plane(self):
+        sample = sample_two_planet_systems(300, seed=5, max_inclination_deg=25.0)
+        positions, velocities, _ = _initial_state(sample, GM_SUN)
+
+        assert np.max(np.abs(positions[..., 2])) > 0.0
+        assert np.max(np.abs(velocities[..., 2])) > 0.0
+        assert not sample.is_coplanar
+
+    def test_mutual_inclination_is_the_angle_between_the_planes(self):
+        """Two orbits each tilted by i can be anywhere from 0 to 2i apart.
+
+        Individual inclinations do not determine the mutual angle --- the nodes do ---
+        which is why the mutual angle is what gets measured.
+        """
+        sample = sample_two_planet_systems(400, seed=9, max_inclination_deg=30.0)
+        mutual = np.degrees(sample.mutual_inclination())
+
+        assert mutual.min() < 5.0
+        assert mutual.max() > 30.0
+        assert np.all(mutual <= 60.0 + 1e-9)
+
+    def test_normals_are_unit_vectors(self):
+        sample = sample_two_planet_systems(200, seed=13, max_inclination_deg=45.0)
+        lengths = np.linalg.norm(sample.orbit_normals(), axis=-1)
+        np.testing.assert_allclose(lengths, 1.0, rtol=0, atol=1e-12)
+
+    def test_the_tilted_angular_momentum_vector_is_conserved(self):
+        """The batched integrator was written for a plane; check it is not stuck there.
+
+        Energy would be a weak test: an integrator that silently flattened the systems
+        would conserve the energy of the flattened system perfectly well. The angular
+        momentum *vector* is the sharp one. Its x and y components are identically
+        zero for coplanar orbits and non-zero once the planes are tilted, so this
+        asserts on exactly the quantity the coplanar dataset could never exercise.
+        """
+        sample = sample_two_planet_systems(60, seed=17, max_inclination_deg=40.0)
+        positions, velocities, gms = _initial_state(sample, GM_SUN)
+
+        before = _batch_angular_momentum(positions, velocities, gms)
+        assert np.max(np.abs(before[:, :2])) > 0.0, "the setup is not actually tilted"
+
+        period = 2.0 * np.pi * np.sqrt(1.0 / GM_SUN)
+        positions, velocities = integrate_batch(
+            positions, velocities, gms, 2000, period / 50.0
+        )
+        after = _batch_angular_momentum(positions, velocities, gms)
+
+        # Leapfrog conserves angular momentum to round-off, unlike energy, which
+        # oscillates at order (dt/P)^2.
+        scale = np.linalg.norm(before, axis=-1, keepdims=True)
+        np.testing.assert_allclose(after / scale, before / scale, rtol=0, atol=1e-11)
+
+    def test_inclination_is_rejected_outside_its_range(self):
+        with pytest.raises(ValueError, match="max_inclination_deg"):
+            sample_two_planet_systems(10, max_inclination_deg=-1.0)
+        with pytest.raises(ValueError, match="max_inclination_deg"):
+            sample_two_planet_systems(10, max_inclination_deg=181.0)
+
+    def test_dataset_reports_the_mutual_inclination(self):
+        flat = build_stability_dataset(**SMALL, seed=7)
+        assert np.max(flat.mutual_inclination_deg) == 0.0
+
+        tilted = build_stability_dataset(**SMALL, seed=7, max_inclination_deg=30.0)
+        assert np.median(tilted.mutual_inclination_deg) > 5.0
+        # Same systems, same features --- only the truth is allowed to move.
+        np.testing.assert_array_equal(flat.features, tilted.features)
+
+
+def _batch_angular_momentum(positions, velocities, gms):
+    """Total angular momentum per system, shape ``(S, 3)``.
+
+    Mass enters as GM throughout, matching the integrator's convention; the constant
+    factor cancels in every comparison made here.
+    """
+    return np.sum(gms[..., None] * np.cross(positions, velocities), axis=1)

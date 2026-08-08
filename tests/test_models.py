@@ -9,6 +9,9 @@ guarded against here:
   threshold" would rest on the tuning being competent.
 * :class:`TestLeakageIsDetected` asserts that the leaked columns *do* inflate the
   score. The demonstration only works if the trap is actually a trap.
+* :class:`TestInclinationTransfer` checks the shift itself is real before anything
+  is concluded from it --- that the features really are identical and only the
+  labels moved, so a drop cannot be blamed on the inputs having changed.
 """
 
 from __future__ import annotations
@@ -17,7 +20,12 @@ import numpy as np
 import pytest
 
 from orrery.koi import LEAKY_FEATURES, PHYSICAL_FEATURES, koi_cache_path, load_koi_table
-from orrery.models import best_threshold, evaluate_koi_leakage, evaluate_stability_models
+from orrery.models import (
+    best_threshold,
+    evaluate_inclination_transfer,
+    evaluate_koi_leakage,
+    evaluate_stability_models,
+)
 from orrery.stability import FEATURE_NAMES, HILL_STABILITY_THRESHOLD, build_stability_dataset
 
 needs_koi = pytest.mark.skipif(
@@ -202,3 +210,95 @@ class TestLeakageIsDetected:
 
     def test_both_models_saw_the_same_rows(self, leakage):
         assert leakage.physical.predictions.shape == leakage.with_leakage.predictions.shape
+
+
+@pytest.fixture(scope="module")
+def transfer():
+    """Train coplanar, score on a coplanar control and on a tilted set.
+
+    The evaluation seed differs from the training seed on purpose: the features are
+    blind to inclination, so a tilted set drawn with the *same* seed would be the
+    training rows themselves and every number would be memorised.
+    """
+    training = build_stability_dataset(count=700, orbits=250.0, seed=31)
+    shifted = [
+        build_stability_dataset(count=400, orbits=250.0, seed=904, max_inclination_deg=tilt)
+        for tilt in (0.0, 30.0)
+    ]
+    return evaluate_inclination_transfer(training, shifted)
+
+
+class TestInclinationTransfer:
+    def test_the_shift_leaves_the_features_untouched(self):
+        """The claim being tested is "only the truth moved". Check that first."""
+        flat = build_stability_dataset(count=200, orbits=120.0, seed=904)
+        tilted = build_stability_dataset(
+            count=200, orbits=120.0, seed=904, max_inclination_deg=30.0
+        )
+
+        np.testing.assert_array_equal(flat.features, tilted.features)
+        assert not np.array_equal(flat.labels, tilted.labels)
+
+    def test_the_control_is_coplanar_and_the_shifted_set_is_not(self, transfer):
+        control, tilted = transfer
+        assert control.median_mutual_inclination_deg == 0.0
+        assert tilted.median_mutual_inclination_deg > 5.0
+
+    def test_tilting_makes_more_systems_survive(self, transfer):
+        control, tilted = transfer
+        assert tilted.stable_fraction > control.stable_fraction
+
+    def test_the_model_raises_more_false_alarms_once_tilted(self, transfer):
+        """The specific failure: a rule taught that tight systems break keeps saying so.
+
+        Asserted on the false-alarm rate rather than on accuracy, because accuracy
+        also moves for the uninteresting reason that the class balance changed.
+        """
+        control, tilted = transfer
+        assert tilted.false_alarm_rate > control.false_alarm_rate
+
+    def test_the_model_loses_its_edge_over_a_constant(self, transfer):
+        """The finding, stated in the only way that survives a change of base rate.
+
+        Raw accuracy is not it. Tilting the orbits makes nearly everything survive, so
+        a rule that says "stable" scores better for free --- the model's accuracy can
+        *rise* while it becomes useless. What falls is its margin over predicting the
+        commoner class every time, and that is what is asserted here.
+        """
+        control, tilted = transfer
+
+        control_lift = control.model_accuracy - control.majority_baseline
+        tilted_lift = tilted.model_accuracy - tilted.majority_baseline
+
+        assert control_lift > 0.0, "the model should beat a constant in-distribution"
+        assert tilted_lift < control_lift
+
+    def test_the_ranking_itself_does_not_degrade(self, transfer):
+        """AUC is base-rate blind, and it is the half of the model that survives.
+
+        Together with the test above this is the whole result: the model still orders
+        systems by risk, it just answers at a cut-off calibrated for a world that no
+        longer applies. Asserted loosely because AUC on a nearly one-class set is
+        noisy; the claim is "does not collapse", not a specific value.
+        """
+        control, tilted = transfer
+        assert tilted.model_roc_auc > control.model_roc_auc - 0.1
+
+    def test_moving_the_cut_puts_the_model_back_ahead(self, transfer):
+        """Recalibration is fitted where it is scored, so it can only be an upper bound.
+
+        Two things are guaranteed and both are asserted: it is at least as good as the
+        fixed 0.5 cut, and it restores the margin over a constant that the fixed cut
+        lost. That is what makes "wrong threshold, not wrong model" checkable rather
+        than merely plausible.
+        """
+        _, tilted = transfer
+        assert tilted.recalibrated_accuracy >= tilted.model_accuracy
+        assert tilted.recalibrated_accuracy > tilted.majority_baseline
+
+    def test_the_majority_baseline_is_reported(self, transfer):
+        """Without it a lopsided test set makes every rule look better than it is."""
+        for score in transfer:
+            assert score.majority_baseline == pytest.approx(
+                max(score.stable_fraction, 1.0 - score.stable_fraction)
+            )

@@ -71,6 +71,8 @@ Cada item liga para a seção que mostra a conta.
 | **Um modelo que ganha o lugar dele.** Prever estabilidade orbital a partir de 2.500 sistemas que o projeto simulou: 0,857 de acurácia contra 0,816 do *melhor limiar possível* na mesma feature, e 0,796 do critério analítico de livro-texto. | [↓](#o-modelo-ganhou-o-lugar-dele) |
 | **Vazamento de alvo, demonstrado.** O mesmo classificador do Kepler marca 0,932 com features físicas e 0,996 quando recebe as flags de vetting — que codificam a resposta. O segundo número é o inútil. | [↓](#a-armadilha-de-vazamento-em-dados-reais-do-kepler) |
 | **Viés de Malmquist numa tabela.** A correlação cor–brilho de 120.000 estrelas do Gaia **inverte de sinal** com a distância, de +0,88 perto para −0,37 longe. Nenhuma relação física faz isso; um levantamento limitado por brilho faz. | [↓](#o-vi%C3%A9s-medido-em-vez-de-descrito) |
+| **Inclinar as órbitas as *estabiliza* — o oposto do que eu esperava.** 4,5° de inclinação mútua levam a sobrevivência de três planetas de 32% para 80% e derrubam as ejeções de 24% para 2%. Também retrata uma manchete: a penalidade do terceiro planeta é um fenômeno coplanar, 39 pontos coplanar e 0,6 a 18°. | [↓](#inclina%C3%A7%C3%A3o-m%C3%BAtua-que-deveria-piorar-as-coisas) |
+| **Um modelo que deixou de valer a pena sem piorar em física.** Avaliado em sistemas inclinados, o classificador de estabilidade vai de +0,207 sobre "dizer sempre estável" para −0,180, enquanto sua AUC se mantém em 0,939 → 0,912. A ordenação sobreviveu; o limiar não; e nem refazê-lo deixa mais que +0,007 de margem. | [↓](#o-que-isso-faz-com-o-modelo-da-fase-5) |
 
 ---
 
@@ -93,6 +95,7 @@ engenharia.
 | Construí a rotação ICRS→galáctica com erro de um quarto de volta. Ortogonal, determinante exatamente 1, polo precisamente em b = +90° — e o centro galáctico em l = 90° em vez de 0°. | Comparação com a matriz publicada; toda verificação interna passou |
 | Defini um atributo `size` por vértice num `PointsMaterial` do three.js, que o ignora silenciosamente. Toda estrela renderizou igual. | Um screenshot, não o build |
 | Escrevi um check de CI que regenerava dados e comparava bytes. A IEEE 754 não promete identidade bit a bit entre plataformas; falhou na primeira rodada limpa por um bit. | A primeira execução do CI, no primeiro push |
+| Adicionei inclinação ao amostrador sorteando `uniform(0, inclinação_máxima)`. Em zero isso devolve zeros — mas ainda avança o gerador, então todo sorteio seguinte se deslocou e o estudo coplanar **já publicado** foi silenciosamente reamostrado. O Δ para 99% de sobrevivência foi de 8,8 para 8,2. | Regenerar uma figura que não deveria mudar, e reparar que mudou |
 
 ---
 
@@ -633,7 +636,7 @@ chapado. O brilho agora vai na cor, que o blending aditivo resolve de graça.
 
 ## Além do roteiro
 
-Quatro acréscimos depois das sete fases, cada um fechando uma lacuna que o trabalho
+Cinco acréscimos depois das sete fases, cada um fechando uma lacuna que o trabalho
 anterior deixou aberta.
 
 ### Três planetas, onde critérios de pares param de funcionar
@@ -708,6 +711,54 @@ coplanar. Coplanares, a sobrevivência de dois e de três planetas difere em 39 
 caso coplanar em que foi medido — o que vale dizer com todas as letras, porque é a
 suposição que eu teria mantido em silêncio se a varredura não tivesse sido feita.
 
+### O que isso faz com o modelo da fase 5
+
+O classificador da fase 5 foi treinado inteiramente em sistemas coplanares e bateu as duas
+linhas de base em dados retidos. A seção acima diz que coplanaridade não é uma suposição
+inofensiva. Então: avalie aquele modelo em sistemas inclinados e veja o que sobra.
+
+O deslocamento é excepcionalmente limpo. Toda feature que o modelo enxerga — massas,
+separações, excentricidades — é cega à inclinação, então girar os planos deixa a matriz de
+projeto **idêntica byte a byte** e move só os rótulos. O que o modelo perder, perde porque
+o mundo mudou, não porque as entradas mudaram.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/phase5-transfer-dark.png">
+    <img src="docs/images/phase5-transfer-light.png" alt="Dois painéis: as três regras de decisão caindo abaixo da acurácia de sempre prever estável conforme a inclinação sobe, e uma AUC ROC constante contra uma vantagem de acurácia que despenca." width="100%">
+  </picture>
+</p>
+
+| Inclinação mútua mediana | De fato estáveis | Dizer sempre "estável" | Gladman | Limiar ajustado | Modelo | Modelo, corte refeito | AUC do modelo |
+|---|---|---|---|---|---|---|---|
+| 0,0° (controle) | 65,2% | 0,652 | 0,784 | 0,822 | **0,859** | 0,862 | 0,939 |
+| 3,5° | 79,1% | 0,791 | 0,829 | 0,801 | 0,806 | 0,863 | 0,915 |
+| 7,1° | 81,9% | 0,819 | 0,847 | 0,811 | 0,792 | 0,878 | 0,918 |
+| 14,1° | 86,1% | 0,861 | 0,847 | 0,787 | 0,758 | 0,889 | 0,909 |
+| 28,1° | 90,7% | 0,907 | 0,847 | 0,750 | **0,727** | 0,914 | 0,912 |
+
+**Acurácia é a lente errada, e reportá-la sozinha teria invertido a resposta.** A
+inclinação empurra a fração sobrevivente para 1, então uma regra que diz "estável" pontua
+melhor de graça — a acurácia de Gladman *sobe* de 0,784 para 0,847 sem ficar mais
+inteligente. A medida honesta é a margem sobre prever a classe mais comum sempre. O modelo
+vai de **+0,207** sobre essa constante para **−0,180**: de claramente útil a pior que não
+tê-lo. Gladman também degrada (+0,132 → −0,060). Nada aqui está a salvo, porque nada aqui
+enxerga inclinação.
+
+**Mas o modelo não deixou de entender a física.** A AUC ROC é cega à taxa-base, e mal se
+move: **0,939 → 0,912**. A ordenação está intacta — o modelo ainda sabe quais sistemas são
+mais arriscados. O que quebrou foi o corte em 0,5, calibrado para um mundo onde um terço
+dos sistemas se desfaz e aplicado a um onde um décimo se desfaz. Mova esse único número e
+a acurácia volta de 0,727 para **0,914**, com o modelo intocado.
+
+**E mais uma volta no parafuso.** Mesmo recalibrado, sua margem sobre a regra constante é
+de **+0,007** — sete milésimos. Quando 91% dos sistemas sobrevivem, quase não sobra nada
+para um classificador acrescentar. Isso não é falha do modelo; é o problema virando
+degenerado, e é a parte do resultado que eu teria perdido se tivesse parado em "mexer no
+limiar resolve".
+
+Rode com `python scripts/plot_inclination_transfer.py`.
+
 ### O diagrama de Hertzsprung–Russell, ligado à cena
 
 A [maquete ao vivo](https://danielramon10.github.io/orrery-lab/) agora traz um diagrama
@@ -749,6 +800,8 @@ scripts/
 ├── plot_statistics.py       a figura da fase 4
 ├── train_models.py          os modelos e a figura da fase 5
 ├── plot_milky_way.py        a figura da fase 6
+├── plot_three_body.py       três planetas, e a varredura de inclinação mútua
+├── plot_inclination_transfer.py  o modelo da fase 5 fora do mundo em que treinou
 ├── fetch_gaia.py            baixa a amostra do Gaia
 ├── export_star_data.py      empacota o céu real para o navegador
 ├── fetch_exoplanets.py      o único script que usa a rede
@@ -765,13 +818,13 @@ web/src/
 ├── state/               o relógio (ref mutável, não estado do React — veja os comentários)
 └── ui/                  controles de tempo, escala, e leitura ao vivo
 
-tests/                   347 testes Python: leis de conservação, ida-e-volta, valores reais
+tests/                   377 testes Python: leis de conservação, ida-e-volta, valores reais
 data/cache/              snapshot de exoplanetas (gitignored, reproduzível)
 docs/images/             figuras geradas e o screenshot da cena
 .github/workflows/       CI (ambas as linguagens + checagem de desatualização) e deploy no Pages
 ```
 
-**451 testes no total** — 347 em Python, 104 em TypeScript. Tudo roda offline exceto o
+**481 testes no total** — 377 em Python, 104 em TypeScript. Tudo roda offline exceto o
 `fetch_exoplanets.py`.
 
 ---

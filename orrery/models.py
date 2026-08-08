@@ -21,6 +21,15 @@ side by side:
 Reporting only the first two would flatter the model. Most write-ups of this kind
 skip the second one.
 
+There is a third way to flatter it, which :func:`evaluate_inclination_transfer`
+exists to close: report only in-distribution numbers. Every feature above is blind to
+mutual inclination, and :mod:`orrery.stability` shows that a few degrees of tilt
+changes which systems survive. So the model can be scored on systems drawn from a
+world it was never shown, with its inputs held byte-identical and only the truth
+moved. What that measures is worth stating carefully --- see :class:`TransferScore`,
+because on a test set where 91% of systems survive, accuracy alone will call a rule
+"better" for reasons that have nothing to do with the rule.
+
 Problem 2 --- classifying Kepler signals
 ----------------------------------------
 Confirmed planet or false positive, from the KOI table. This exists mainly to
@@ -34,6 +43,7 @@ data the model has never seen.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -49,7 +59,9 @@ __all__ = [
     "ModelScore",
     "StabilityComparison",
     "LeakageComparison",
+    "TransferScore",
     "evaluate_stability_models",
+    "evaluate_inclination_transfer",
     "evaluate_koi_leakage",
     "best_threshold",
 ]
@@ -106,6 +118,53 @@ class StabilityComparison:
 
     def by_name(self, name: str) -> ModelScore:
         return next(score for score in self.scores if score.name == name)
+
+
+@dataclass(frozen=True)
+class TransferScore:
+    """How a coplanar-trained stability model does on tilted systems.
+
+    Attributes:
+        median_mutual_inclination_deg: Median angle between the two orbit planes.
+        stable_fraction: Fraction of the shifted set that actually survived.
+        gladman_accuracy: The analytic criterion on the same rows, for reference. It
+            cannot see inclination either, so it degrades too --- which is the point:
+            the model is not being singled out.
+        tuned_accuracy: The single best cut on ``Delta``, fitted on the coplanar
+            training set and applied unchanged.
+        model_accuracy: Gradient boosting, likewise fitted coplanar and unchanged.
+        model_roc_auc: Ranking quality. Separated from accuracy on purpose: a model
+            can keep ordering systems correctly while its 0.5 cut lands in the wrong
+            place, and those two failures call for different fixes.
+        false_alarm_rate: Fraction of *surviving* systems the model called unstable.
+        majority_baseline: Accuracy of predicting the commoner class every time.
+
+            This column is the reason the rest of the table can be read at all.
+            Inclination pushes the stable fraction toward 1, and *any* rule that says
+            "stable" often enough scores better on a lopsided set --- so an accuracy
+            that goes up does not mean the rule got smarter. A number below this
+            baseline is a rule that would be beaten by a constant.
+        recalibrated_accuracy: Best accuracy reachable by moving the probability cut,
+            with the model itself untouched.
+
+            Fitted on the very rows it is scored on, so it is an upper bound and not a
+            result --- the same caveat that applies to the tuned threshold in
+            :func:`evaluate_stability_models`. It is here to separate "the model no
+            longer knows which systems are risky" from "the model still knows, but is
+            answering at the wrong cut-off".
+        sample_size: Rows scored.
+    """
+
+    median_mutual_inclination_deg: float
+    stable_fraction: float
+    gladman_accuracy: float
+    tuned_accuracy: float
+    model_accuracy: float
+    model_roc_auc: float
+    false_alarm_rate: float
+    majority_baseline: float
+    recalibrated_accuracy: float
+    sample_size: int
 
 
 @dataclass(frozen=True)
@@ -260,6 +319,92 @@ def evaluate_stability_models(
         ),
         cross_validated_auc=(float(cross_validated.mean()), float(cross_validated.std())),
     )
+
+
+def evaluate_inclination_transfer(
+    training: StabilityDataset,
+    shifted: Sequence[StabilityDataset],
+) -> list[TransferScore]:
+    """Score a coplanar-trained model on systems whose orbits are no longer coplanar.
+
+    Every feature in :data:`FEATURE_NAMES` is blind to inclination, so tilting the
+    orbits leaves the design matrix untouched and moves only the truth. That makes
+    this a clean covariate-free shift: whatever the model loses, it loses because the
+    world changed underneath it, not because its inputs did.
+
+    Args:
+        training: Coplanar dataset. The model and the tuned threshold are fitted on
+            **all** of it --- there is no need to hold anything back here, because the
+            evaluation sets are separate draws.
+        shifted: Datasets to score, which must come from a different ``seed`` than
+            ``training`` or the evaluation is on memorised rows. Passing a coplanar
+            dataset first is strongly recommended: without that control there is no
+            way to tell an inclination effect apart from an ordinary sampling
+            difference.
+
+    Returns:
+        One :class:`TransferScore` per entry in ``shifted``, in order.
+    """
+    separation_index = FEATURE_NAMES.index("hill_separation")
+    threshold, _ = best_threshold(
+        training.features[:, separation_index], training.labels
+    )
+
+    model = HistGradientBoostingClassifier(
+        max_iter=300, learning_rate=0.08, max_depth=6, random_state=RANDOM_STATE
+    )
+    model.fit(training.features, training.labels)
+
+    results: list[TransferScore] = []
+    for dataset in shifted:
+        labels = dataset.labels
+        separation = dataset.features[:, separation_index]
+        probabilities = model.predict_proba(dataset.features)[:, 1]
+        predictions = (probabilities >= 0.5).astype(int)
+
+        # A model that has learned "coplanar systems this tight break" keeps saying so
+        # once they stop breaking, so the error to watch is the false alarm: called
+        # unstable, actually survived.
+        actually_stable = labels == 1
+        false_alarms = (
+            float(np.mean(predictions[actually_stable] == 0))
+            if actually_stable.any()
+            else float("nan")
+        )
+
+        # AUC needs both classes present, which stops being true once almost nothing
+        # is unstable --- and that is a result, not an error to paper over.
+        both_classes = 0 < labels.mean() < 1
+        _, recalibrated = best_threshold(probabilities, labels)
+
+        results.append(
+            TransferScore(
+                median_mutual_inclination_deg=float(
+                    np.median(dataset.mutual_inclination_deg)
+                ),
+                stable_fraction=dataset.stable_fraction,
+                gladman_accuracy=float(
+                    accuracy_score(
+                        labels, (separation > HILL_STABILITY_THRESHOLD).astype(int)
+                    )
+                ),
+                tuned_accuracy=float(
+                    accuracy_score(labels, (separation > threshold).astype(int))
+                ),
+                model_accuracy=float(accuracy_score(labels, predictions)),
+                model_roc_auc=(
+                    float(roc_auc_score(labels, probabilities))
+                    if both_classes
+                    else float("nan")
+                ),
+                false_alarm_rate=false_alarms,
+                majority_baseline=float(max(labels.mean(), 1.0 - labels.mean())),
+                recalibrated_accuracy=float(recalibrated),
+                sample_size=len(dataset),
+            )
+        )
+
+    return results
 
 
 def evaluate_koi_leakage(table: KoiTable, test_size: float = 0.3) -> LeakageComparison:

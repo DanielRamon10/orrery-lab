@@ -70,6 +70,8 @@ Each links to the section that shows the working.
 | **A model that earns its place.** Predicting orbital stability from 2,500 systems the project simulated itself: 0.857 accuracy against 0.816 for the *best possible* single threshold on the same feature, and 0.796 for the textbook analytic criterion. | [↓](#did-the-model-earn-its-place) |
 | **Target leakage, demonstrated.** The same Kepler classifier scores 0.932 on physical features and 0.996 once given the vetting flags — which encode the answer. The second number is the worthless one. | [↓](#the-leakage-trap-on-real-kepler-data) |
 | **Malmquist bias in one table.** The colour–brightness correlation of 120,000 Gaia stars *reverses sign* with distance, +0.88 nearby to −0.37 far away. No physical relationship does that; a brightness-limited survey does. | [↓](#the-bias-measured-rather-than-described) |
+| **Tilting orbits *stabilises* them — the opposite of what I expected.** 4.5° of mutual inclination takes three-planet survival from 32% to 80% and collapses ejections from 24% to 2%. It also retracts a headline: the third planet's penalty is a coplanar phenomenon, 39 points coplanar and 0.6 at 18°. | [↓](#mutual-inclination-which-was-supposed-to-make-things-worse) |
+| **A model that stopped being worth having, without getting worse at physics.** Scored on tilted systems, the stability classifier goes from +0.207 over "always say stable" to −0.180, while its AUC holds at 0.939 → 0.912. The ranking survived; the threshold did not; and even re-fitting it leaves only +0.007 of margin. | [↓](#what-that-does-to-the-phase-5-model) |
 
 ---
 
@@ -92,6 +94,7 @@ showing half its engineering.
 | Built the ICRS→galactic rotation with a quarter-turn error. Orthogonal, determinant exactly 1, pole precisely at b = +90° — and the galactic centre at l = 90° instead of 0°. | Comparison against the published matrix; every internal check passed |
 | Set a per-vertex `size` attribute on a three.js `PointsMaterial`, which silently ignores it. Every star rendered identically. | A screenshot, not the build |
 | Wrote a CI check that regenerated data and compared bytes. IEEE 754 makes no cross-platform bit-identity promise; it failed on the first clean run over one unit in the last place. | The first CI run, on the first push |
+| Added inclination to the sampler by drawing `uniform(0, max_inclination)`. At zero that returns zeros — but it still advances the generator, so every draw after it shifted and the *already-published* coplanar study was silently resampled. Δ for 99% survival moved 8.8 → 8.2. | Regenerating a figure that should not have changed, and noticing that it had |
 
 ---
 
@@ -632,7 +635,7 @@ now rides in the colour, which additive blending handles for free.
 
 ## Beyond the roadmap
 
-Four additions after the seven phases, each closing a gap the earlier work left open.
+Five additions after the seven phases, each closing a gap the earlier work left open.
 
 ### Three planets, where pairwise criteria stop working
 
@@ -704,6 +707,54 @@ mutual inclination they differ by 0.6. The earlier result stands, for the coplan
 it was measured in — which is worth stating plainly, because it is the assumption I would
 have quietly kept if the sweep had not been run.
 
+### What that does to the phase 5 model
+
+Phase 5's classifier was trained entirely on coplanar systems and beat both baselines on
+held-out data. The section above says coplanarity is not a harmless assumption. So: score
+that model on tilted systems and see what is left.
+
+The shift is unusually clean. Every feature the model sees — masses, separations,
+eccentricities — is blind to inclination, so tilting the orbits leaves the design matrix
+**byte-identical** and moves only the labels. Whatever the model loses, it loses because
+the world changed, not because its inputs did.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/phase5-transfer-dark.png">
+    <img src="docs/images/phase5-transfer-light.png" alt="Two panels: all three decision rules falling below the accuracy of always predicting stable as inclination rises, and a flat ROC AUC against a collapsing accuracy lift." width="100%">
+  </picture>
+</p>
+
+| Median mutual inclination | Actually stable | Always say "stable" | Gladman | Tuned threshold | Model | Model, cut re-fitted | Model AUC |
+|---|---|---|---|---|---|---|---|
+| 0.0° (control) | 65.2% | 0.652 | 0.784 | 0.822 | **0.859** | 0.862 | 0.939 |
+| 3.5° | 79.1% | 0.791 | 0.829 | 0.801 | 0.806 | 0.863 | 0.915 |
+| 7.1° | 81.9% | 0.819 | 0.847 | 0.811 | 0.792 | 0.878 | 0.918 |
+| 14.1° | 86.1% | 0.861 | 0.847 | 0.787 | 0.758 | 0.889 | 0.909 |
+| 28.1° | 90.7% | 0.907 | 0.847 | 0.750 | **0.727** | 0.914 | 0.912 |
+
+**Accuracy is the wrong lens, and reporting it alone would have inverted the answer.**
+Inclination pushes the surviving fraction toward 1, so a rule that says "stable" scores
+better for free — Gladman's accuracy *rises* from 0.784 to 0.847 while getting no smarter.
+The honest measure is the margin over predicting the commoner class every time. The model
+goes from **+0.207** over that constant to **−0.180**: from clearly worth having to worse
+than not having it. Gladman degrades too (+0.132 → −0.060). Nothing here is safe, because
+nothing here can see inclination.
+
+**But the model did not stop understanding the physics.** ROC AUC is blind to the base
+rate, and it barely moves: **0.939 → 0.912**. The ranking is intact — the model still
+knows which systems are riskier. What broke is the 0.5 cut-off, calibrated for a world
+where a third of systems come apart and applied to one where a tenth do. Move that single
+number and accuracy goes from 0.727 back to **0.914**, with the model itself untouched.
+
+**And one more turn of the screw.** Even recalibrated, its margin over the constant rule
+is **+0.007** — seven thousandths. When 91% of systems survive, there is almost nothing
+left for a classifier to add. That is not a model failure; it is the problem becoming
+degenerate, and it is the part of the result I would have missed had I stopped at "moving
+the threshold fixes it".
+
+Run it with `python scripts/plot_inclination_transfer.py`.
+
 ### The Hertzsprung–Russell diagram, wired to the scene
 
 The [live orrery](https://danielramon10.github.io/orrery-lab/) now carries an HR diagram
@@ -744,6 +795,8 @@ scripts/
 ├── plot_statistics.py       the phase 4 figure
 ├── train_models.py          the phase 5 models and figure
 ├── plot_milky_way.py        the phase 6 figure
+├── plot_three_body.py       three planets, and the mutual-inclination sweep
+├── plot_inclination_transfer.py  the phase 5 model on systems it was not trained for
 ├── fetch_gaia.py            downloads the Gaia sample
 ├── export_star_data.py      packs the real sky for the browser
 ├── fetch_exoplanets.py      the only script that touches the network
@@ -760,13 +813,13 @@ web/src/
 ├── state/               the clock (a mutable ref, not React state — see comments)
 └── ui/                  time controls, scale toggles, live read-out
 
-tests/                   347 Python tests: conservation laws, round-trips, real values
+tests/                   377 Python tests: conservation laws, round-trips, real values
 data/cache/              exoplanet snapshot (gitignored, reproducible)
 docs/images/             generated figures and the scene screenshot
 .github/workflows/       CI (both languages + staleness check) and Pages deploy
 ```
 
-**451 tests in total** — 347 Python, 104 TypeScript. Everything runs offline except
+**481 tests in total** — 377 Python, 104 TypeScript. Everything runs offline except
 `fetch_exoplanets.py`.
 
 ---
